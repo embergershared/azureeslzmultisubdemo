@@ -1022,6 +1022,7 @@ in the [Beginner's Guide](docs/BEGINNERS-GUIDE.md).
 |---|---|---|
 | `Parameter file still contains REPLACE_WITH_* placeholders` | The local parameter file was never completed | [Beginner's Guide](docs/BEGINNERS-GUIDE.md#troubleshooting) |
 | `AuthorizationFailed` on management groups or policy | The deployment principal lacks the rights listed under [Required permissions](#required-permissions) | Beginner's Guide |
+| `Cannot determine effective permissions` or `Azure CLI could not query effective permissions` | The permissions request failed; this is not proof that policy-write access is missing. Use the updated preflight scripts to see the underlying Azure CLI diagnostic, then resolve the reported TLS/proxy, sign-in, API, or authorization error | [Preflight permission troubleshooting](docs/BEGINNERS-GUIDE.md#preflight-permission-query-failures) |
 | Deployment fails validating a parameter that no longer exists | A v1 parameter file was reused; `subscriptionOwnersGroupObjectId` was removed in v2 | [Migrating from v1 to v2](docs/MIGRATION-V1-TO-V2.md) |
 | Explicit configuration-error resource about the workspace | `deployCentralLogAnalytics` and `existingLogAnalyticsWorkspaceResourceId` were both set, or Sentinel was requested with neither | [Shared services and cost](docs/SHARED-SERVICES-AND-COST.md) |
 | A deployment is unexpectedly blocked | A deny assignment was promoted to `Default` | [Enforcement and remediation](docs/ENFORCEMENT-AND-REMEDIATION.md) |

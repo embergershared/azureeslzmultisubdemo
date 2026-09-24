@@ -649,11 +649,40 @@ Both versions of preflight:
 - builds the Bicep locally;
 - reads the current Azure account;
 - confirms both subscriptions are enabled and in the signed-in tenant;
-- confirms the tenant-root management group is visible.
+- confirms the tenant-root management group is visible;
+- queries the caller's policy-write permissions, plus RBAC-write permissions when
+  required, without creating role assignments.
 
 These checks are read-only. Passing preflight means the inputs are plausible; it
 does not guarantee the operator has every write permission required for
 deployment.
+
+### Preflight permission-query failures
+
+`Cannot determine effective permissions` in older scripts hides the Azure CLI
+error. It does **not** establish that the caller lacks
+`microsoft.authorization/policyassignments/write`. Use the updated scripts and
+rerun preflight: they use Authorization API version `2022-04-01`, preserve CLI
+diagnostics, and distinguish failed requests or malformed responses from a
+successful response that does not grant the required action.
+
+To isolate the read-only request in PowerShell, use the management-group ID from
+your parameter file:
+
+```powershell
+$parameters = Get-Content .\parameters\demo.parameters.json -Raw | ConvertFrom-Json
+$rootId = $parameters.parameters.tenantRootManagementGroupId.value
+az rest --method get --url "https://management.azure.com/providers/Microsoft.Management/managementGroups/$rootId/providers/Microsoft.Authorization/permissions?api-version=2022-04-01" --output json
+```
+
+For `CERTIFICATE_VERIFY_FAILED`, check whether an NVA or proxy is inspecting
+HTTPS to `management.azure.com`. Have the network administrator correct the
+trusted certificate chain or inspection exemption; do not disable TLS
+verification. For sign-in errors, authenticate to the intended tenant again.
+For `AuthorizationFailed`, review the denied action and scope with the Azure
+administrator. Only a successful permissions response without the required
+action is reported as `The deployment caller lacks ...`; activate any required
+PIM role or request the least-privilege role at that scope before retrying.
 
 ## Step 11: Run Azure what-if
 
