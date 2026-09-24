@@ -1,0 +1,22 @@
+{
+  "universe_usage_history": [
+    {
+      "universe": "The Matrix",
+      "assignment_id": "azureeslzmultisubdemo-20260923",
+      "used_at": "2026-09-23T10:00:40.745-04:00"
+    }
+  ],
+  "assignment_cast_snapshots": {
+    "azureeslzmultisubdemo-20260923": {
+      "universe": "The Matrix",
+      "agents": {
+        "lead": "Neo",
+        "azure-bicep": "Trinity",
+        "powershell-cli": "Morpheus",
+        "tester": "Tank",
+        "rbac-security": "Cypher"
+      },
+      "created_at": "2026-09-23T10:00:40.745-04:00"
+    }
+  }
+}
