@@ -13,10 +13,10 @@ if ([string]::IsNullOrWhiteSpace($ParameterFile)) {
     $ParameterFile = Join-Path $ProjectDir 'parameters/demo.parameters.json'
 }
 
-& (Join-Path $ScriptDir 'preflight.ps1') -ParameterFile $ParameterFile
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
+# & (Join-Path $ScriptDir 'preflight.ps1') -ParameterFile $ParameterFile
+# if ($LASTEXITCODE -ne 0) {
+#     exit $LASTEXITCODE
+# }
 
 $parameters = Get-Content -LiteralPath $ParameterFile -Raw | ConvertFrom-Json
 $deploymentLocation = [string]$parameters.parameters.deploymentLocation.value

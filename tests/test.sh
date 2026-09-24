@@ -83,6 +83,17 @@ if [[ "${1:-}" == "resource" ]]; then
 fi
 
 if [[ "${1:-}" == "rest" ]]; then
+  if [[ "$*" != *'/providers/Microsoft.Authorization/permissions?api-version=2022-04-01 --output json' ]]; then
+    printf '%s\n' 'Preflight must query the current permissions API at the supplied scope.' >&2
+    exit 1
+  fi
+  if [[ -n "${MOCK_REST_ERROR:-}" ]]; then
+    printf '%s\n' "${MOCK_REST_ERROR}" >&2
+    exit 1
+  fi
+  if [[ "${MOCK_REST_EMPTY:-false}" == true ]]; then
+    exit 0
+  fi
   if [[ -n "${MOCK_WORKSPACE_ID:-}" && "$*" == *"${MOCK_WORKSPACE_ID}/providers/Microsoft.Authorization/permissions"* ]]; then
     printf '%s\n' "${MOCK_WORKSPACE_REST_JSON}"
     exit 0
@@ -147,11 +158,62 @@ EOF
   run_case routing_fail fail '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' ".parameters.enableFirewallRouteGuardrails.value = true | .parameters.approvedFirewallResourceId.value = \"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/azureFirewalls/fw-01\" | .parameters.approvedFirewallPrivateIp.value = \"10.0.0.4\" | .parameters.approvedRouteTableResourceIds.value = [\"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01\", \"/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01\"] | .parameters.approvedRouteTablePrefixes.value = [\"10.0.0.0/24\", \"10.0.0.0/24\"]"
   run_case permissions_pass pass '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}'
   run_case permissions_fail fail '{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":["microsoft.authorization/roleassignments/write"]}]}' '.parameters.deployRoleAssignments.value = true'
+  run_case permissions_wildcard_pass pass '{"value":[{"actions":["Microsoft.Authorization/*"],"notActions":[]}]}'
   run_case permissions_internal_wildcard_fail fail '{"value":[{"actions":["*"],"notActions":["Microsoft.Authorization/*/Write"]}]}'
   run_case permissions_data_actions_only_fail fail '{"value":[{"actions":[],"dataActions":["*"],"notActions":[]}]}'
   run_case permissions_separate_grant_pass pass '{"value":[{"actions":["*"],"notActions":["Microsoft.Authorization/*/Write"]},{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write"],"notActions":[]}]}'
   run_case missing_policy_definition_write_fail fail '{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":[]}]}'
   run_case backup_blank_fail fail '{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":[]}]}' '.parameters.approvedBackupVaults.value = [{"vaultResourceId":"","backupPolicyResourceId":""}]'
+
+  run_permission_diagnostic_case() {
+    local name="$1"
+    local rest_json="$2"
+    local rest_error="$3"
+    local rest_empty="$4"
+    local expected_diagnostic="$5"
+    local output
+    local status=0
+
+    output="$(PROJECT_DIR="${PROJECT_DIR}" PATH="${mock_dir}:$PATH" MOCK_REST_JSON="${rest_json}" MOCK_REST_ERROR="${rest_error}" MOCK_REST_EMPTY="${rest_empty}" \
+      "${PROJECT_DIR}/scripts/preflight.sh" "${base_parameters}" 2>&1)" || status=$?
+    [[ "${status}" -ne 0 ]] || {
+      printf 'ERROR: permission %s fixture unexpectedly passed.\n' "${name}" >&2
+      exit 1
+    }
+    [[ "${output}" == *"${expected_diagnostic}"* ]] || {
+      printf "ERROR: permission %s fixture lost its actionable diagnostic '%s'. Output: %s\n" "${name}" "${expected_diagnostic}" "${output}" >&2
+      exit 1
+    }
+    [[ "${output}" != *'The deployment caller lacks'* ]] || {
+      printf 'ERROR: permission %s fixture was misreported as a confirmed permission denial. Output: %s\n' "${name}" "${output}" >&2
+      exit 1
+    }
+  }
+
+  run_permission_diagnostic_case request_failure '' 'AuthorizationFailed: caller cannot read effective permissions' false 'AuthorizationFailed: caller cannot read effective permissions'
+  run_permission_diagnostic_case tls_failure '' 'SSL: CERTIFICATE_VERIFY_FAILED' false 'SSL: CERTIFICATE_VERIFY_FAILED'
+  run_permission_diagnostic_case unsupported_api '' 'InvalidApiVersionParameter' false 'InvalidApiVersionParameter'
+  run_permission_diagnostic_case invalid_json 'not-json' '' false 'invalid JSON'
+  run_permission_diagnostic_case empty_response '' '' true 'empty response'
+  run_permission_diagnostic_case missing_value '{}' '' false 'no value array'
+  run_permission_diagnostic_case null_value '{"value":null}' '' false 'no value array'
+  run_permission_diagnostic_case object_value '{"value":{"actions":["*"]}}' '' false 'no value array'
+  run_permission_diagnostic_case array_response '[{"value":[{"actions":["*"]}]}]' '' false 'no value array'
+
+  denied_output=''
+  denied_status=0
+  denied_output="$(PROJECT_DIR="${PROJECT_DIR}" PATH="${mock_dir}:$PATH" \
+    MOCK_REST_JSON='{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":[]}]}' \
+    "${PROJECT_DIR}/scripts/preflight.sh" "${base_parameters}" 2>&1)" || denied_status=$?
+  [[ "${denied_status}" -ne 0 && "${denied_output}" == *'The deployment caller lacks microsoft.authorization/policydefinitions/write'* ]] || {
+    printf 'ERROR: confirmed permission denial did not report the denied action. Output: %s\n' "${denied_output}" >&2
+    exit 1
+  }
+  [[ "${denied_output}" != *'could not query effective permissions'* ]] || {
+    printf 'ERROR: confirmed permission denial was misreported as a request failure. Output: %s\n' "${denied_output}" >&2
+    exit 1
+  }
+
   local collision_parameters="${TEMP_DIR}/collision.parameters.json"
   jq '.parameters.namePrefix.value = "demo" | .parameters.deployEvidenceResources.value = true' "${base_parameters}" > "${collision_parameters}"
   local collision_case collision_expected collision_result

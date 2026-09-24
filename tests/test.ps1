@@ -17,6 +17,8 @@ function Invoke-OfflineParitySuite {
     $priorAz = if (Test-Path function:az) { ${function:az} } else { $null }
     $priorProjectDir = $env:PROJECT_DIR
     $priorRestJson = $env:MOCK_REST_JSON
+    $priorRestError = $env:MOCK_REST_ERROR
+    $priorRestEmpty = $env:MOCK_REST_EMPTY
     $priorAccountJson = $env:MOCK_ACCOUNT_JSON
     $priorLastExitCode = if (Test-Path variable:global:LASTEXITCODE) { $global:LASTEXITCODE } else { $null }
     try {
@@ -46,6 +48,16 @@ function Invoke-OfflineParitySuite {
             'role' { return }
             'provider' { 'Registered'; return }
             'rest' {
+                $urlIndex = [array]::IndexOf($Arguments, '--url')
+                if ($urlIndex -lt 0 -or $Arguments[$urlIndex + 1] -notmatch '/providers/Microsoft\.Authorization/permissions\?api-version=2022-04-01$') {
+                    throw 'Preflight must query the current permissions API at the supplied scope.'
+                }
+                if ($env:MOCK_REST_ERROR) {
+                    Write-Error $env:MOCK_REST_ERROR -ErrorAction Continue
+                    $global:LASTEXITCODE = 1
+                    return
+                }
+                if ($env:MOCK_REST_EMPTY -eq 'true') { return }
                 if ($env:MOCK_WORKSPACE_ID -and (($Arguments -join ' ') -like "*$($env:MOCK_WORKSPACE_ID)/providers/Microsoft.Authorization/permissions*")) { $env:MOCK_WORKSPACE_REST_JSON }
                 else { $env:MOCK_REST_JSON ?? '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' }
                 return
@@ -78,7 +90,8 @@ function Invoke-OfflineParitySuite {
         @{ Name = 'routing-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' ; Mutator = { param($doc) $doc.parameters.enableFirewallRouteGuardrails.value = $true; $doc.parameters.approvedFirewallResourceId.value = '/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/azureFirewalls/fw-01'; $doc.parameters.approvedFirewallPrivateIp.value = '10.0.0.4'; $doc.parameters.approvedRouteTableResourceIds.value = @('/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01'); $doc.parameters.approvedRouteTablePrefixes.value = @('10.0.0.0/24') } },
         @{ Name = 'routing-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' ; Mutator = { param($doc) $doc.parameters.enableFirewallRouteGuardrails.value = $true; $doc.parameters.approvedFirewallResourceId.value = '/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/azureFirewalls/fw-01'; $doc.parameters.approvedFirewallPrivateIp.value = '10.0.0.4'; $doc.parameters.approvedRouteTableResourceIds.value = @('/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01','/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01'); $doc.parameters.approvedRouteTablePrefixes.value = @('10.0.0.0/24','10.0.0.0/24') } },
         @{ Name = 'permissions-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' },
-        @{ Name = 'permissions-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":["microsoft.authorization/roleassignments/write"]}]}' ; Mutator = { param($doc) $doc.parameters.deployRoleAssignments.value = $true } },
+        @{ Name = 'permissions-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":["microsoft.authorization/roleassignments/write"]}]}' ; ExpectedDiagnostic = 'lacks microsoft.authorization/policydefinitions/write'; ForbiddenDiagnostic = 'could not query effective permissions'; Mutator = { param($doc) $doc.parameters.deployRoleAssignments.value = $true } },
+        @{ Name = 'permissions-wildcard-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["Microsoft.Authorization/*"],"notActions":[]}]}' },
         @{ Name = 'permissions-internal-wildcard-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["*"],"notActions":["Microsoft.Authorization/*/Write"]}]}' },
         @{ Name = 'permissions-data-actions-only-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":[],"dataActions":["*"],"notActions":[]}]}' },
         @{ Name = 'permissions-separate-grant-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["*"],"notActions":["Microsoft.Authorization/*/Write"]},{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write"],"notActions":[]}]}' },
@@ -153,7 +166,61 @@ function Invoke-OfflineParitySuite {
         if (($case.Expected -eq 'pass' -and -not $passed) -or ($case.Expected -eq 'fail' -and $passed)) {
             throw "Offline parity case $($case.Name) expected $($case.Expected) but got $($passed.ToString().ToLowerInvariant()). Output: $($output -join ' ')"
         }
+        $outputText = $output -join ' '
+        if ($case.ContainsKey('ExpectedDiagnostic') -and $outputText -notlike "*$($case.ExpectedDiagnostic)*") {
+            throw "Offline parity case $($case.Name) did not preserve expected diagnostic '$($case.ExpectedDiagnostic)'. Output: $outputText"
+        }
+        if ($case.ContainsKey('ForbiddenDiagnostic') -and $outputText -like "*$($case.ForbiddenDiagnostic)*") {
+            throw "Offline parity case $($case.Name) emitted request-failure diagnostic for a confirmed denial. Output: $outputText"
+        }
     }
+
+    $permissionPath = Join-Path $TempDir 'permission-diagnostics.json'
+    $permissionDocument = $baseDocument | ConvertFrom-Json
+    $permissionDocument.parameters.tenantRootManagementGroupId.value = 'demo-root'
+    $permissionDocument.parameters.connectivitySubscriptionId.value = '11111111-1111-1111-1111-111111111111'
+    $permissionDocument.parameters.workloadSubscriptionId.value = '22222222-2222-2222-2222-222222222222'
+    $permissionDocument.parameters.governanceAdminsGroupObjectId.value = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    $permissionDocument.parameters.networkOperatorsGroupObjectId.value = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+    $permissionDocument.parameters.workloadContributorsGroupObjectId.value = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+    $permissionDocument.parameters.readOnlyAuditorsGroupObjectId.value = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
+    $permissionDocument | ConvertTo-Json -Depth 20 | Set-Content -Path $permissionPath -Encoding utf8
+
+    foreach ($permissionFailure in @(
+        @{ Name = 'request-failure'; Error = 'AuthorizationFailed: caller cannot read effective permissions'; Expected = 'AuthorizationFailed: caller cannot read effective permissions' },
+        @{ Name = 'tls-failure'; Error = 'SSL: CERTIFICATE_VERIFY_FAILED'; Expected = 'SSL: CERTIFICATE_VERIFY_FAILED' },
+        @{ Name = 'unsupported-api'; Error = 'InvalidApiVersionParameter'; Expected = 'InvalidApiVersionParameter' },
+        @{ Name = 'invalid-json'; Json = 'not-json'; Expected = 'invalid JSON' },
+        @{ Name = 'empty-response'; Empty = $true; Expected = 'empty response' },
+        @{ Name = 'missing-value'; Json = '{}'; Expected = 'no value array' },
+        @{ Name = 'null-value'; Json = '{"value":null}'; Expected = 'no value array' },
+        @{ Name = 'object-value'; Json = '{"value":{"actions":["*"]}}'; Expected = 'no value array' },
+        @{ Name = 'array-response'; Json = '[{"value":[{"actions":["*"]}]}]'; Expected = 'expected a JSON object' },
+        @{ Name = 'null-response'; Json = 'null'; Expected = 'expected a JSON object' }
+    )) {
+        Remove-Item env:MOCK_REST_ERROR, env:MOCK_REST_EMPTY -ErrorAction SilentlyContinue
+        $env:MOCK_REST_JSON = if ($permissionFailure.ContainsKey('Json')) { $permissionFailure.Json } else { '' }
+        if ($permissionFailure.ContainsKey('Error')) { $env:MOCK_REST_ERROR = $permissionFailure.Error }
+        if ($permissionFailure.ContainsKey('Empty') -and $permissionFailure.Empty) { $env:MOCK_REST_EMPTY = 'true' }
+        try {
+            $output = & (Join-Path $ProjectDir 'scripts/preflight.ps1') -ParameterFile $permissionPath 2>&1
+        }
+        catch {
+            $output = @($_ | Out-String)
+            $global:LASTEXITCODE = 1
+        }
+        $outputText = $output -join ' '
+        if ($LASTEXITCODE -eq 0) {
+            throw "Permission $($permissionFailure.Name) fixture unexpectedly passed."
+        }
+        if ($outputText -notlike "*$($permissionFailure.Expected)*") {
+            throw "Permission $($permissionFailure.Name) fixture lost its actionable diagnostic '$($permissionFailure.Expected)'. Output: $outputText"
+        }
+        if ($outputText -like '*The deployment caller lacks*') {
+            throw "Permission $($permissionFailure.Name) fixture was misreported as a confirmed permission denial. Output: $outputText"
+        }
+    }
+    Remove-Item env:MOCK_REST_ERROR, env:MOCK_REST_EMPTY -ErrorAction SilentlyContinue
     $collisionDocument = $baseDocument | ConvertFrom-Json
     $collisionDocument.parameters.tenantRootManagementGroupId.value = 'demo-root'
     $collisionDocument.parameters.connectivitySubscriptionId.value = '11111111-1111-1111-1111-111111111111'
@@ -184,6 +251,38 @@ function Invoke-OfflineParitySuite {
     }
     foreach ($name in 'MOCK_GROUP_EXISTS', 'MOCK_GROUP_OWNER', 'MOCK_GROUP_SHOW_ERROR', 'MOCK_GROUP_EXISTS_ERROR') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
 
+    & {
+        . (Join-Path $ProjectDir 'scripts/preflight.ps1')
+        function az {
+            param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+            if ($Arguments[0] -eq 'failure') {
+                & pwsh -NoLogo -NoProfile -Command '[Console]::Error.WriteLine("SSL: CERTIFICATE_VERIFY_FAILED"); exit 1'
+            }
+            else {
+                & pwsh -NoLogo -NoProfile -Command '[Console]::Error.WriteLine("WARNING: native CLI diagnostic"); [Console]::Out.WriteLine(''{"value":[]}''); exit 0'
+            }
+        }
+
+        foreach ($nativeErrorPreference in @($false, $true)) {
+            $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+            $failure = @(Invoke-AzJson -Arguments @('failure') 2>&1)
+            $failureText = $failure -join ' '
+            if ($failureText -notlike '*SSL: CERTIFICATE_VERIFY_FAILED*' -or
+                @($failure | Where-Object { $null -ne $_ -and $_ -isnot [System.Management.Automation.ErrorRecord] }).Count -ne 0) {
+                throw "Native CLI failure lost its diagnostic or returned a success value: $failureText"
+            }
+            $success = @(Invoke-AzJson -Arguments @('success') 2>&1)
+            $jsonResults = @($success | Where-Object { $_ -is [System.Management.Automation.PSCustomObject] })
+            if ($jsonResults.Count -ne 1 -or $jsonResults[0].value.Count -ne 0 -or
+                ($success -join ' ') -notlike '*WARNING: native CLI diagnostic*') {
+                throw 'Native CLI stderr must remain visible without corrupting a successful JSON response.'
+            }
+            if ($PSNativeCommandUseErrorActionPreference -ne $nativeErrorPreference) {
+                throw 'Invoke-AzJson must not change the caller native-error preference.'
+            }
+        }
+    }
+
     Write-Host 'Offline parity suite passed.'
     }
     finally {
@@ -192,6 +291,8 @@ function Invoke-OfflineParitySuite {
         foreach ($entry in @(
             @{ Name = 'PROJECT_DIR'; Value = $priorProjectDir },
             @{ Name = 'MOCK_REST_JSON'; Value = $priorRestJson },
+            @{ Name = 'MOCK_REST_ERROR'; Value = $priorRestError },
+            @{ Name = 'MOCK_REST_EMPTY'; Value = $priorRestEmpty },
             @{ Name = 'MOCK_ACCOUNT_JSON'; Value = $priorAccountJson })) {
             if ($null -eq $entry.Value) { Remove-Item "env:$($entry.Name)" -ErrorAction SilentlyContinue }
             else { Set-Item "env:$($entry.Name)" -Value $entry.Value }

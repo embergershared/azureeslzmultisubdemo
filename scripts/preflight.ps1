@@ -164,12 +164,30 @@ function Test-ResourceIdParameter {
 }
 
 function Invoke-AzJson {
-    param([string[]]$Arguments)
-    $output = & az @Arguments 2>$null
+    param(
+        [string[]]$Arguments,
+        [string]$Operation = 'Azure CLI JSON request'
+    )
+    # Handle the exit code ourselves and leave native stderr visible, separate from JSON.
+    $PSNativeCommandUseErrorActionPreference = $false
+    $output = & az @Arguments
     if ($LASTEXITCODE -ne 0) {
         return $null
     }
-    return (($output -join [Environment]::NewLine) | ConvertFrom-Json)
+    $json = ($output -join [Environment]::NewLine).Trim()
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        Stop-Preflight "Azure CLI returned an empty response for the $Operation`: az $($Arguments -join ' ')"
+    }
+    try {
+        $result = $json | ConvertFrom-Json -NoEnumerate
+    }
+    catch {
+        Stop-Preflight "Azure CLI returned invalid JSON for the $Operation`: az $($Arguments -join ' '). $($_.Exception.Message)"
+    }
+    if ($result -isnot [System.Management.Automation.PSCustomObject]) {
+        Stop-Preflight "Azure CLI returned an unexpected JSON shape for the $Operation`: expected a JSON object."
+    }
+    return $result
 }
 
 function Invoke-Preflight {
@@ -428,9 +446,9 @@ foreach ($criticalSubscription in $criticalSubscriptions) {
     Test-Subscription $criticalSubscription 'critical infrastructure'
 }
 
-& az account management-group show --name $tenantRoot --output none 2>$null
+& az account management-group show --name $tenantRoot --output none
 if ($LASTEXITCODE -ne 0) {
-    Stop-Preflight "Cannot read tenant-root management group '$tenantRoot'. Check the ID and tenant permissions."
+    Stop-Preflight "Azure CLI could not read tenant-root management group '$tenantRoot'. Review the Azure CLI diagnostic above."
 }
 
 function Test-ScopeAccess {
@@ -438,9 +456,9 @@ function Test-ScopeAccess {
         [string]$Scope,
         [string]$Label
     )
-    & az role assignment list --scope $Scope --include-inherited --all --output none 2>$null
+    & az role assignment list --scope $Scope --include-inherited --all --output none
     if ($LASTEXITCODE -ne 0) {
-        Stop-Preflight "Cannot read effective role assignments at $Label scope $Scope; request Reader access before deployment."
+        Stop-Preflight "Azure CLI could not read role assignments at $Label scope $Scope. Review the Azure CLI diagnostic above."
     }
 }
 
@@ -453,13 +471,16 @@ function Test-EffectivePermission {
         [string]$Scope,
         [string]$Action
     )
-    $permissions = Invoke-AzJson @(
+    $permissions = Invoke-AzJson -Operation 'effective-permissions request' -Arguments @(
         'rest', '--method', 'get',
-        '--url', "https://management.azure.com$Scope/providers/Microsoft.Authorization/permissions?api-version=2015-07-01",
+        '--url', "https://management.azure.com$Scope/providers/Microsoft.Authorization/permissions?api-version=2022-04-01",
         '--output', 'json'
     )
     if ($null -eq $permissions) {
-        Stop-Preflight "Cannot determine effective permissions at $Scope; request $Action before deployment."
+        Stop-Preflight "Azure CLI could not query effective permissions at $Scope (required action: $Action). Review the Azure CLI diagnostic above."
+    }
+    if ($null -eq $permissions.PSObject.Properties['value'] -or $permissions.value -isnot [array]) {
+        Stop-Preflight "Azure returned an invalid effective-permissions response at ${Scope}: the JSON response has no value array."
     }
     if (-not (Test-ActionPermitted -Action $Action -Permissions $permissions)) {
         Stop-Preflight "The deployment caller lacks $Action at $Scope; grant the required role before deployment."
