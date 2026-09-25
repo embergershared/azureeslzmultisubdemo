@@ -397,8 +397,14 @@ check_permission() {
   local scope="$1"
   local action="$2"
   local permissions_json
-  permissions_json="$(az rest --method get --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/permissions?api-version=2015-07-01" --output json 2>/dev/null)" \
-    || fail "Cannot determine effective permissions at ${scope}; request ${action} before deployment."
+  permissions_json="$(az rest --method get --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/permissions?api-version=2022-04-01" --output json)" \
+    || fail "Azure CLI could not query effective permissions at ${scope} (required action: ${action}). Review the Azure CLI diagnostic above."
+  [[ -n "${permissions_json}" ]] \
+    || fail "Azure CLI returned an empty response while querying effective permissions at ${scope}."
+  printf '%s\n' "${permissions_json}" | jq -e . >/dev/null 2>&1 \
+    || fail "Azure CLI returned invalid JSON while querying effective permissions at ${scope}."
+  printf '%s\n' "${permissions_json}" | jq -e '.value | type == "array"' >/dev/null \
+    || fail "Azure returned an invalid effective-permissions response at ${scope}: the JSON response has no value array."
   permission_set_allows_action "${action}" "${permissions_json}" \
     || fail "The deployment caller lacks ${action} at ${scope}; grant the required role before deployment."
 }

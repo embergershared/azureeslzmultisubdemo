@@ -1,10 +1,15 @@
+#Requires -Version 7.0
 [CmdletBinding()]
 param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# WSL's bash.exe does not share native Windows paths or the fixture mock PATH.
+$RunBashTests = -not $IsWindows -and $null -ne (Get-Command bash -ErrorAction SilentlyContinue)
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir 'bicep-test-helpers.ps1')
 $ProjectDir = Split-Path -Parent $ScriptDir
 $ArtifactsParent = Join-Path $ProjectDir '.test-artifacts'
 $TempDir = Join-Path $ArtifactsParent ("test-ps1-" + [guid]::NewGuid().ToString('N'))
@@ -17,9 +22,12 @@ function Invoke-OfflineParitySuite {
     $priorAz = if (Test-Path function:az) { ${function:az} } else { $null }
     $priorProjectDir = $env:PROJECT_DIR
     $priorRestJson = $env:MOCK_REST_JSON
+    $priorRestError = $env:MOCK_REST_ERROR
+    $priorRestEmpty = $env:MOCK_REST_EMPTY
     $priorAccountJson = $env:MOCK_ACCOUNT_JSON
     $priorLastExitCode = if (Test-Path variable:global:LASTEXITCODE) { $global:LASTEXITCODE } else { $null }
     try {
+    & (Join-Path $ScriptDir 'validate-preflight-scope.ps1')
     $global:OfflinePolicyVersions = @{}
     foreach ($control in @((Get-Content -LiteralPath (Join-Path $ProjectDir 'policy/control-catalog.json') -Raw | ConvertFrom-Json).controls)) {
         if ($control.mechanism.builtIn -eq $true -and $control.mechanism.definitionId) {
@@ -43,9 +51,25 @@ function Invoke-OfflineParitySuite {
                 }
                 return
             }
-            'role' { return }
+            'role' {
+                if ($Arguments -contains '--scope' -and $Arguments -contains '--all') {
+                    Write-Error 'group or scope are not required when --all is used' -ErrorAction Continue
+                    $global:LASTEXITCODE = 1
+                }
+                return
+            }
             'provider' { 'Registered'; return }
             'rest' {
+                $urlIndex = [array]::IndexOf($Arguments, '--url')
+                if ($urlIndex -lt 0 -or $Arguments[$urlIndex + 1] -notmatch '/providers/Microsoft\.Authorization/permissions\?api-version=2022-04-01$') {
+                    throw 'Preflight must query the current permissions API at the supplied scope.'
+                }
+                if ($env:MOCK_REST_ERROR) {
+                    Write-Error $env:MOCK_REST_ERROR -ErrorAction Continue
+                    $global:LASTEXITCODE = 1
+                    return
+                }
+                if ($env:MOCK_REST_EMPTY -eq 'true') { return }
                 if ($env:MOCK_WORKSPACE_ID -and (($Arguments -join ' ') -like "*$($env:MOCK_WORKSPACE_ID)/providers/Microsoft.Authorization/permissions*")) { $env:MOCK_WORKSPACE_REST_JSON }
                 else { $env:MOCK_REST_JSON ?? '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' }
                 return
@@ -78,7 +102,8 @@ function Invoke-OfflineParitySuite {
         @{ Name = 'routing-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' ; Mutator = { param($doc) $doc.parameters.enableFirewallRouteGuardrails.value = $true; $doc.parameters.approvedFirewallResourceId.value = '/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/azureFirewalls/fw-01'; $doc.parameters.approvedFirewallPrivateIp.value = '10.0.0.4'; $doc.parameters.approvedRouteTableResourceIds.value = @('/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01'); $doc.parameters.approvedRouteTablePrefixes.value = @('10.0.0.0/24') } },
         @{ Name = 'routing-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' ; Mutator = { param($doc) $doc.parameters.enableFirewallRouteGuardrails.value = $true; $doc.parameters.approvedFirewallResourceId.value = '/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/azureFirewalls/fw-01'; $doc.parameters.approvedFirewallPrivateIp.value = '10.0.0.4'; $doc.parameters.approvedRouteTableResourceIds.value = @('/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01','/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-network/providers/Microsoft.Network/routeTables/rt-01'); $doc.parameters.approvedRouteTablePrefixes.value = @('10.0.0.0/24','10.0.0.0/24') } },
         @{ Name = 'permissions-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write","microsoft.authorization/roleassignments/write"],"notActions":[]}]}' },
-        @{ Name = 'permissions-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":["microsoft.authorization/roleassignments/write"]}]}' ; Mutator = { param($doc) $doc.parameters.deployRoleAssignments.value = $true } },
+        @{ Name = 'permissions-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["microsoft.authorization/policyassignments/write"],"notActions":["microsoft.authorization/roleassignments/write"]}]}' ; ExpectedDiagnostic = 'lacks microsoft.authorization/policydefinitions/write'; ForbiddenDiagnostic = 'could not query effective permissions'; Mutator = { param($doc) $doc.parameters.deployRoleAssignments.value = $true } },
+        @{ Name = 'permissions-wildcard-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["Microsoft.Authorization/*"],"notActions":[]}]}' },
         @{ Name = 'permissions-internal-wildcard-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":["*"],"notActions":["Microsoft.Authorization/*/Write"]}]}' },
         @{ Name = 'permissions-data-actions-only-fail'; Expected = 'fail'; RestJson = '{"value":[{"actions":[],"dataActions":["*"],"notActions":[]}]}' },
         @{ Name = 'permissions-separate-grant-pass'; Expected = 'pass'; RestJson = '{"value":[{"actions":["*"],"notActions":["Microsoft.Authorization/*/Write"]},{"actions":["microsoft.authorization/policyassignments/write","microsoft.authorization/policydefinitions/write","microsoft.authorization/policysetdefinitions/write"],"notActions":[]}]}' },
@@ -153,7 +178,61 @@ function Invoke-OfflineParitySuite {
         if (($case.Expected -eq 'pass' -and -not $passed) -or ($case.Expected -eq 'fail' -and $passed)) {
             throw "Offline parity case $($case.Name) expected $($case.Expected) but got $($passed.ToString().ToLowerInvariant()). Output: $($output -join ' ')"
         }
+        $outputText = $output -join ' '
+        if ($case.ContainsKey('ExpectedDiagnostic') -and $outputText -notlike "*$($case.ExpectedDiagnostic)*") {
+            throw "Offline parity case $($case.Name) did not preserve expected diagnostic '$($case.ExpectedDiagnostic)'. Output: $outputText"
+        }
+        if ($case.ContainsKey('ForbiddenDiagnostic') -and $outputText -like "*$($case.ForbiddenDiagnostic)*") {
+            throw "Offline parity case $($case.Name) emitted request-failure diagnostic for a confirmed denial. Output: $outputText"
+        }
     }
+
+    $permissionPath = Join-Path $TempDir 'permission-diagnostics.json'
+    $permissionDocument = $baseDocument | ConvertFrom-Json
+    $permissionDocument.parameters.tenantRootManagementGroupId.value = 'demo-root'
+    $permissionDocument.parameters.connectivitySubscriptionId.value = '11111111-1111-1111-1111-111111111111'
+    $permissionDocument.parameters.workloadSubscriptionId.value = '22222222-2222-2222-2222-222222222222'
+    $permissionDocument.parameters.governanceAdminsGroupObjectId.value = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    $permissionDocument.parameters.networkOperatorsGroupObjectId.value = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+    $permissionDocument.parameters.workloadContributorsGroupObjectId.value = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+    $permissionDocument.parameters.readOnlyAuditorsGroupObjectId.value = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
+    $permissionDocument | ConvertTo-Json -Depth 20 | Set-Content -Path $permissionPath -Encoding utf8
+
+    foreach ($permissionFailure in @(
+        @{ Name = 'request-failure'; Error = 'AuthorizationFailed: caller cannot read effective permissions'; Expected = 'AuthorizationFailed: caller cannot read effective permissions' },
+        @{ Name = 'tls-failure'; Error = 'SSL: CERTIFICATE_VERIFY_FAILED'; Expected = 'SSL: CERTIFICATE_VERIFY_FAILED' },
+        @{ Name = 'unsupported-api'; Error = 'InvalidApiVersionParameter'; Expected = 'InvalidApiVersionParameter' },
+        @{ Name = 'invalid-json'; Json = 'not-json'; Expected = 'invalid JSON' },
+        @{ Name = 'empty-response'; Empty = $true; Expected = 'empty response' },
+        @{ Name = 'missing-value'; Json = '{}'; Expected = 'no value array' },
+        @{ Name = 'null-value'; Json = '{"value":null}'; Expected = 'no value array' },
+        @{ Name = 'object-value'; Json = '{"value":{"actions":["*"]}}'; Expected = 'no value array' },
+        @{ Name = 'array-response'; Json = '[{"value":[{"actions":["*"]}]}]'; Expected = 'expected a JSON object' },
+        @{ Name = 'null-response'; Json = 'null'; Expected = 'expected a JSON object' }
+    )) {
+        Remove-Item env:MOCK_REST_ERROR, env:MOCK_REST_EMPTY -ErrorAction SilentlyContinue
+        $env:MOCK_REST_JSON = if ($permissionFailure.ContainsKey('Json')) { $permissionFailure.Json } else { '' }
+        if ($permissionFailure.ContainsKey('Error')) { $env:MOCK_REST_ERROR = $permissionFailure.Error }
+        if ($permissionFailure.ContainsKey('Empty') -and $permissionFailure.Empty) { $env:MOCK_REST_EMPTY = 'true' }
+        try {
+            $output = & (Join-Path $ProjectDir 'scripts/preflight.ps1') -ParameterFile $permissionPath 2>&1
+        }
+        catch {
+            $output = @($_ | Out-String)
+            $global:LASTEXITCODE = 1
+        }
+        $outputText = $output -join ' '
+        if ($LASTEXITCODE -eq 0) {
+            throw "Permission $($permissionFailure.Name) fixture unexpectedly passed."
+        }
+        if ($outputText -notlike "*$($permissionFailure.Expected)*") {
+            throw "Permission $($permissionFailure.Name) fixture lost its actionable diagnostic '$($permissionFailure.Expected)'. Output: $outputText"
+        }
+        if ($outputText -like '*The deployment caller lacks*') {
+            throw "Permission $($permissionFailure.Name) fixture was misreported as a confirmed permission denial. Output: $outputText"
+        }
+    }
+    Remove-Item env:MOCK_REST_ERROR, env:MOCK_REST_EMPTY -ErrorAction SilentlyContinue
     $collisionDocument = $baseDocument | ConvertFrom-Json
     $collisionDocument.parameters.tenantRootManagementGroupId.value = 'demo-root'
     $collisionDocument.parameters.connectivitySubscriptionId.value = '11111111-1111-1111-1111-111111111111'
@@ -184,6 +263,38 @@ function Invoke-OfflineParitySuite {
     }
     foreach ($name in 'MOCK_GROUP_EXISTS', 'MOCK_GROUP_OWNER', 'MOCK_GROUP_SHOW_ERROR', 'MOCK_GROUP_EXISTS_ERROR') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
 
+    & {
+        . (Join-Path $ProjectDir 'scripts/preflight.ps1')
+        function az {
+            param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+            if ($Arguments[0] -eq 'failure') {
+                & pwsh -NoLogo -NoProfile -Command '[Console]::Error.WriteLine("SSL: CERTIFICATE_VERIFY_FAILED"); exit 1'
+            }
+            else {
+                & pwsh -NoLogo -NoProfile -Command '[Console]::Error.WriteLine("WARNING: native CLI diagnostic"); [Console]::Out.WriteLine(''{"value":[]}''); exit 0'
+            }
+        }
+
+        foreach ($nativeErrorPreference in @($false, $true)) {
+            $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+            $failure = @(Invoke-AzJson -Arguments @('failure') 2>&1)
+            $failureText = $failure -join ' '
+            if ($failureText -notlike '*SSL: CERTIFICATE_VERIFY_FAILED*' -or
+                @($failure | Where-Object { $null -ne $_ -and $_ -isnot [System.Management.Automation.ErrorRecord] }).Count -ne 0) {
+                throw "Native CLI failure lost its diagnostic or returned a success value: $failureText"
+            }
+            $success = @(Invoke-AzJson -Arguments @('success') 2>&1)
+            $jsonResults = @($success | Where-Object { $_ -is [System.Management.Automation.PSCustomObject] })
+            if ($jsonResults.Count -ne 1 -or $jsonResults[0].value.Count -ne 0 -or
+                ($success -join ' ') -notlike '*WARNING: native CLI diagnostic*') {
+                throw 'Native CLI stderr must remain visible without corrupting a successful JSON response.'
+            }
+            if ($PSNativeCommandUseErrorActionPreference -ne $nativeErrorPreference) {
+                throw 'Invoke-AzJson must not change the caller native-error preference.'
+            }
+        }
+    }
+
     Write-Host 'Offline parity suite passed.'
     }
     finally {
@@ -192,6 +303,8 @@ function Invoke-OfflineParitySuite {
         foreach ($entry in @(
             @{ Name = 'PROJECT_DIR'; Value = $priorProjectDir },
             @{ Name = 'MOCK_REST_JSON'; Value = $priorRestJson },
+            @{ Name = 'MOCK_REST_ERROR'; Value = $priorRestError },
+            @{ Name = 'MOCK_REST_EMPTY'; Value = $priorRestEmpty },
             @{ Name = 'MOCK_ACCOUNT_JSON'; Value = $priorAccountJson })) {
             if ($null -eq $entry.Value) { Remove-Item "env:$($entry.Name)" -ErrorAction SilentlyContinue }
             else { Set-Item "env:$($entry.Name)" -Value $entry.Value }
@@ -247,119 +360,36 @@ function Invoke-TeardownOfflineFixture {
 
     $mockDir = Join-Path $fixtureDir 'mock-bin'
     New-Item -ItemType Directory -Path $mockDir -Force | Out-Null
-    $mockAzPath = Join-Path $mockDir 'az'
-    $mockAzScript = @'
-#!/usr/bin/env bash
-set -euo pipefail
-if [[ -n "${MOCK_AZ_LOG:-}" ]]; then
-  printf '%s\n' "az $*" >> "${MOCK_AZ_LOG}"
-fi
-[[ $# -gt 0 ]] || exit 0
-case "${1}" in
-  group)
-    case "${2:-}" in
-      exists)
-        if [[ -n "${MOCK_AZ_WAIT_FALLBACK_FILE:-}" && -f "${MOCK_AZ_WAIT_FALLBACK_FILE}" ]]; then
-          printf '%s\n' invalid
-          exit 0
-        fi
-        case "$*" in
-          *"rg-demo-monitoring"*) printf 'true\n'; exit 0 ;;
-          *"rg-demo-connectivity"*) printf 'true\n'; exit 0 ;;
-          *"rg-demo-workloads-demo"*) printf 'true\n'; exit 0 ;;
-          *"rg-demo-backup"*) printf 'true\n'; exit 0 ;;
-          *) printf 'false\n'; exit 0 ;;
-        esac
-        ;;
-      show)
-        case "$*" in
-          *"rg-demo-monitoring"*) printf '%s\n' "${MOCK_AZ_OWNER:-demo}"; exit 0 ;;
-          *"rg-demo-connectivity"*) printf '%s\n' "${MOCK_AZ_OWNER:-demo}"; exit 0 ;;
-          *"rg-demo-workloads-demo"*) printf '%s\n' "${MOCK_AZ_OWNER:-demo}"; exit 0 ;;
-          *"rg-demo-backup"*) printf '%s\n' "${MOCK_AZ_OWNER:-demo}"; exit 0 ;;
-          *) printf '%s\n' ''; exit 0 ;;
-        esac
-        ;;
-      wait)
-        if [[ -n "${MOCK_AZ_WAIT_FALLBACK_FILE:-}" ]]; then
-          : > "${MOCK_AZ_WAIT_FALLBACK_FILE}"
-          exit 1
-        fi
-        exit 0
-        ;;
-    esac
-    ;;
-  policy)
-    if [[ "${2:-}" == "assignment" && "${3:-}" == "show" ]]; then
-      case "$*" in
-        *"demo-nerc-cip-technical"*) printf '%s\n' 'nerc-assignment-principal'; exit 0 ;;
-      esac
-      printf '%s\n' 'null'; exit 0
-    fi
-    if [[ "${2:-}" == "assignment" && "${3:-}" == "delete" ]]; then exit 0; fi
-    if [[ "${2:-}" == "set-definition" && "${3:-}" == "delete" ]]; then exit 0; fi
-    if [[ "${2:-}" == "definition" && "${3:-}" == "delete" ]]; then exit 0; fi
-    ;;
-  role)
-    if [[ "${2:-}" == "assignment" && "${3:-}" == "list" ]]; then
-      if [[ "$*" == *"nerc-assignment-principal"* && "$*" == *"ws-protected"* ]]; then
-        printf '%s\n' 'NERC-ROLE-ASSIGNMENT-ID'
-        exit 0
-      fi
-      printf '%s\n' ''
-      exit 0
-    fi
-    if [[ "${2:-}" == "assignment" && "${3:-}" == "delete" ]]; then exit 0; fi
-    ;;
-  account)
-    exit 0
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-exit 0
-'@
-    Set-Content -LiteralPath $mockAzPath -Value $mockAzScript -Encoding utf8
-    & bash -c "chmod +x '$mockAzPath'"
-    $mockAzCmdPath = Join-Path $mockDir 'az.cmd'
+    $mockAzPath = Join-Path $mockDir 'az.ps1'
     @'
-@echo off
-echo az %* >> "%MOCK_AZ_LOG%"
-set "args=%*"
-if "%MOCK_AZ_OWNER%"=="" (set "owner=demo") else (set "owner=%MOCK_AZ_OWNER%")
-if /I "%~1 %~2 %~3"=="policy assignment show" (
-  echo %args% | findstr /I /C:"demo-nerc-cip-technical" >nul
-  if not errorlevel 1 (
-    echo nerc-assignment-principal
-  ) else (
-    echo null
-  )
-  exit /b 0
-)
-if /I "%~1 %~2 %~3"=="role assignment list" (
-  echo %args% | findstr /I /C:"nerc-assignment-principal" >nul || exit /b 0
-  echo %args% | findstr /I /C:"ws-protected" >nul || exit /b 0
-  echo NERC-ROLE-ASSIGNMENT-ID
-  exit /b 0
-)
-if /I "%~1 %~2"=="group exists" (
-  if not "%MOCK_AZ_WAIT_FALLBACK_FILE%"=="" if exist "%MOCK_AZ_WAIT_FALLBACK_FILE%" (echo invalid& exit /b 0)
-  echo %args% | findstr /I /C:"rg-demo-monitoring" /C:"rg-demo-connectivity" /C:"rg-demo-workloads-demo" /C:"rg-demo-backup" >nul
-  if errorlevel 1 (echo false) else (echo true)
-  exit /b 0
-)
-if /I "%~1 %~2"=="group wait" (
-  if not "%MOCK_AZ_WAIT_FALLBACK_FILE%"=="" (type nul > "%MOCK_AZ_WAIT_FALLBACK_FILE%"& exit /b 1)
-  exit /b 0
-)
-if /I "%~1 %~2"=="group show" (
-  echo %args% | findstr /I /C:"rg-demo-monitoring" /C:"rg-demo-connectivity" /C:"rg-demo-workloads-demo" /C:"rg-demo-backup" >nul
-  if errorlevel 1 (echo.) else (echo %owner%)
-  exit /b 0
-)
-exit /b 0
-'@ | Set-Content -LiteralPath $mockAzCmdPath
+$command = $args -join ' '
+Add-Content -LiteralPath $env:MOCK_AZ_LOG -Value "az $command"
+if ($command -like 'policy assignment show *') {
+    if ($command -like '*demo-nerc-cip-technical*') { 'nerc-assignment-principal' } else { 'null' }
+}
+elseif ($command -like 'role assignment list *') {
+    if ($command -like '*nerc-assignment-principal*' -and $command -like '*ws-protected*') { 'NERC-ROLE-ASSIGNMENT-ID' }
+}
+elseif ($command -like 'group exists *') {
+    if ($env:MOCK_AZ_WAIT_FALLBACK_FILE -and (Test-Path -LiteralPath $env:MOCK_AZ_WAIT_FALLBACK_FILE)) {
+        'invalid'
+    }
+    elseif ($command -match 'rg-demo-(monitoring|connectivity|workloads-demo|backup)') { 'true' }
+    else { 'false' }
+}
+elseif ($command -like 'group wait *') {
+    if ($env:MOCK_AZ_WAIT_FALLBACK_FILE) {
+        New-Item -ItemType File -Path $env:MOCK_AZ_WAIT_FALLBACK_FILE -Force | Out-Null
+        exit 1
+    }
+}
+elseif ($command -like 'group show *') {
+    if ($command -match 'rg-demo-(monitoring|connectivity|workloads-demo|backup)') {
+        if ($env:MOCK_AZ_OWNER) { $env:MOCK_AZ_OWNER } else { 'demo' }
+    }
+}
+exit 0
+'@ | Set-Content -LiteralPath $mockAzPath
 
     $pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
     if ($null -eq $pwshCommand) {
@@ -521,8 +551,13 @@ exit $LASTEXITCODE
 }
 
 if ($env:ESLZ_OFFLINE_TESTS -eq '1') {
-    Invoke-OfflineParitySuite
-    Invoke-TeardownOfflineFixture
+    try {
+        Invoke-OfflineParitySuite
+        Invoke-TeardownOfflineFixture
+    }
+    finally {
+        Remove-Item -LiteralPath $TempDir -Recurse -Force
+    }
     return
 }
 
@@ -618,15 +653,17 @@ try {
         Stop-Test 'VERSION must be exactly 2.0.0.'
     }
     $readmeText = Get-Content -LiteralPath (Join-Path $ProjectDir 'README.md') -Raw
+    # Assemble URLs so mail link protection cannot rewrite executable test literals.
+    $repositoryUrl = 'https://' + 'github.com/johnstel/azureeslzmultisubdemo'
     foreach ($requiredText in @(
         '**Version status:** `main` is the **v2.0.0 release line** (`2.0.0`).',
-        'https://github.com/johnstel/azureeslzmultisubdemo/releases/tag/v1.0.0',
-        'https://github.com/johnstel/azureeslzmultisubdemo/tree/release/v1',
+        "$repositoryUrl/releases/tag/v1.0.0",
+        "$repositoryUrl/tree/release/v1",
         'docs/RELEASE-NOTES-V2.0.0.md',
-        'https://github.com/johnstel/azureeslzmultisubdemo/issues?q=milestone%3A%22v2.0.0%22'
+        "$repositoryUrl/issues?q=milestone%3A%22v2.0.0%22"
     )) {
         if (-not $readmeText.Contains($requiredText)) {
-            Stop-Test "README is missing required v2 guidance: $requiredText"
+            Stop-Test "README is missing required v2 guidance: $requiredText. If links were rewritten by email protection (for example, URL Defense or Safe Links), obtain tests/test.ps1 and README.md together from the same Git commit using Git or a repository ZIP, not copied email content. Preserve local parameter files."
         }
     }
     $releaseNotesPath = Join-Path $ProjectDir 'docs/RELEASE-NOTES-V2.0.0.md'
@@ -674,16 +711,14 @@ try {
 
     Write-Host '2/31 Build the complete tenant template and validate policy assignment shapes...'
     $compiledTemplate = Join-Path $TempDir 'main.json'
-    $buildOutput = & az bicep build --file (Join-Path $ProjectDir 'main.bicep') --outfile $compiledTemplate 2>&1
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Bicep build failed.' }
+    $buildOutput = Invoke-TestBicep -Operation build -File (Join-Path $ProjectDir 'main.bicep') -OutFile $compiledTemplate -PassThru
     if ($buildOutput -match 'BCP318') {
         Stop-Test 'main.bicep build must not emit a BCP318 nullable-module-output warning.'
     }
     $compiledEligibilityTemplate = Join-Path $TempDir 'owner-eligibility-request.json'
-    & az bicep build `
-        --file (Join-Path $ProjectDir 'identity/azure-rbac/owner-eligibility-request.bicep') `
-        --outfile $compiledEligibilityTemplate
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Owner eligibility Bicep build failed.' }
+    Invoke-TestBicep -Operation build `
+        -File (Join-Path $ProjectDir 'identity/azure-rbac/owner-eligibility-request.bicep') `
+        -OutFile $compiledEligibilityTemplate
     & (Join-Path $ScriptDir 'validate-policy-assignment.ps1') -CompiledMainTemplate $compiledTemplate
     $compiledJson = Get-Content -LiteralPath $compiledTemplate -Raw | ConvertFrom-Json
     Write-Host '    Confirm the exact six-tag initiative and compliant evidence resource groups...'
@@ -882,15 +917,13 @@ try {
         Stop-Test 'Safe-demo diagnostics and policy exemptions must remain disabled and empty by default.'
     }
     $safeDemoParametersPath = Join-Path $TempDir 'main.parameters.json'
-    & az bicep build-params `
-        --file (Join-Path $ProjectDir 'parameters/main.template.bicepparam') `
-        --outfile $safeDemoParametersPath
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Safe-demo Bicep parameter build failed.' }
+    Invoke-TestBicep -Operation build-params `
+        -File (Join-Path $ProjectDir 'parameters/main.template.bicepparam') `
+        -OutFile $safeDemoParametersPath
     $compiledParametersPath = Join-Path $TempDir 'customer-control.parameters.json'
-    & az bicep build-params `
-        --file (Join-Path $ProjectDir 'parameters/customer-control.template.bicepparam') `
-        --outfile $compiledParametersPath
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Customer-control Bicep parameter build failed.' }
+    Invoke-TestBicep -Operation build-params `
+        -File (Join-Path $ProjectDir 'parameters/customer-control.template.bicepparam') `
+        -OutFile $compiledParametersPath
     $safeDemoParameters = Get-Content -LiteralPath $safeDemoParametersPath -Raw | ConvertFrom-Json
     $compiledParameters = Get-Content -LiteralPath $compiledParametersPath -Raw | ConvertFrom-Json
     if ($compiledParameters.parameters.networkIngressPolicyEffect.value -ne 'Audit') {
@@ -938,10 +971,8 @@ try {
         '(?m)^param resourceDiagnosticsPolicyEffect = .*$',
         "param resourceDiagnosticsPolicyEffect = 'AuditIfNotExists'"
     ) | Set-Content -LiteralPath $monitoringNegativePath
-    & az bicep build-params --file $monitoringPositivePath --outfile "$monitoringPositivePath.json"
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Workspace-backed diagnostics profile failed to compile.' }
-    & az bicep build-params --file $monitoringNegativePath --outfile "$monitoringNegativePath.json"
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Workspace-free diagnostics guard profile failed to compile.' }
+    Invoke-TestBicep -Operation build-params -File $monitoringPositivePath -OutFile "$monitoringPositivePath.json"
+    Invoke-TestBicep -Operation build-params -File $monitoringNegativePath -OutFile "$monitoringNegativePath.json"
     if (-not (Select-String -Path (Join-Path $ProjectDir 'main.bicep') -SimpleMatch -Pattern 'var loggingPoliciesRequireWorkspace = loggingAssignmentsRequireWorkspace && !effectiveMonitoringWorkspaceIdIsValid' -Quiet) -or
         -not (Select-String -Path (Join-Path $ProjectDir 'main.bicep') -SimpleMatch -Pattern "fail('Activity Log and supported-resource diagnostics assignments require a valid effective Log Analytics workspace resource ID" -Quiet)) {
         Stop-Test 'Audit/Deploy diagnostics must remain guarded by a valid effective workspace ID.'
@@ -968,10 +999,7 @@ try {
         )
         Set-Content -LiteralPath $tagParameterPath -Value $tagParameterText
         $tagParameterJsonPath = "$tagParameterPath.json"
-        & az bicep build-params --file $tagParameterPath --outfile $tagParameterJsonPath
-        if ($LASTEXITCODE -ne 0) {
-            Stop-Test "Tag-inheritance $tagInheritanceEnabled parameter shape failed to compile."
-        }
+        Invoke-TestBicep -Operation build-params -File $tagParameterPath -OutFile $tagParameterJsonPath
         $tagParameterJson = Get-Content -LiteralPath $tagParameterJsonPath -Raw | ConvertFrom-Json
         if ($tagParameterJson.parameters.enableTagInheritance.value -ne $tagInheritanceEnabled) {
             Stop-Test "Tag-inheritance $tagInheritanceEnabled parameter shape did not compile as expected."
@@ -981,8 +1009,13 @@ try {
     Write-Host '    Confirm tag remediation workflows remain preview-first and explicitly guarded...'
     $bashTagRemediation = Join-Path $ProjectDir 'scripts/remediate-resource-tags.sh'
     $powerShellTagRemediation = Join-Path $ProjectDir 'scripts/remediate-resource-tags.ps1'
-    & bash -n $bashTagRemediation
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Bash tag-remediation workflow has invalid syntax.' }
+    if ($RunBashTests) {
+        & bash -n $bashTagRemediation
+        if ($LASTEXITCODE -ne 0) { Stop-Test 'Bash tag-remediation workflow has invalid syntax.' }
+    }
+    else {
+        Write-Host '    (skipping Bash syntax check: run tests/test.sh on macOS or Linux; source safety checks still run)'
+    }
     $parseErrors = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile(
         $powerShellTagRemediation,
@@ -1012,11 +1045,15 @@ try {
         }
     }
     $unsupportedRemediationCommand = [string]::Concat('New-AzPolicy', 'Remediation')
-    & rg -q -F $unsupportedRemediationCommand $ProjectDir
-    if ($LASTEXITCODE -eq 0) {
+    $remediationSourceFiles = @(
+        Get-ChildItem -LiteralPath $ProjectDir -File
+        foreach ($sourceDirectory in 'docs', 'examples', 'identity', 'modules', 'parameters', 'policy', 'scripts', 'tests') {
+            Get-ChildItem -LiteralPath (Join-Path $ProjectDir $sourceDirectory) -File -Recurse
+        }
+    )
+    if ($remediationSourceFiles | Select-String -SimpleMatch -CaseSensitive -Pattern $unsupportedRemediationCommand -List) {
         Stop-Test 'The unsupported PowerShell remediation command remains in the repository.'
     }
-    if ($LASTEXITCODE -ne 1) { Stop-Test 'Unable to scan for unsupported PowerShell remediation commands.' }
     $bashPreviewIndex = $bashRemediationText.IndexOf('if [[ "${MODE}" != ''--execute'' ]]', [System.StringComparison]::Ordinal)
     $bashEnvironmentIndex = $bashRemediationText.LastIndexOf('ESLZ_TAG_REMEDIATION_CONFIRMATION', [System.StringComparison]::Ordinal)
     $bashTypedIndex = $bashRemediationText.IndexOf('IFS= read -r typed_confirmation', [System.StringComparison]::Ordinal)
@@ -1090,10 +1127,9 @@ try {
         Stop-Test 'A prohibited evidence resource type is declared.'
     }
     $paidResourceFixture = Join-Path $TempDir 'paid-resource-declaration.json'
-    & az bicep build `
-        --file (Join-Path $ScriptDir 'fixtures/paid-resource-declaration.bicep') `
-        --outfile $paidResourceFixture
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Paid-resource declaration fixture build failed.' }
+    Invoke-TestBicep -Operation build `
+        -File (Join-Path $ScriptDir 'fixtures/paid-resource-declaration.bicep') `
+        -OutFile $paidResourceFixture
     $paidResourceFixtureJson = Get-Content -LiteralPath $paidResourceFixture -Raw | ConvertFrom-Json
     if (@(Find-ProhibitedPaidDeclarations -Node $paidResourceFixtureJson).Count -eq 0) {
         Stop-Test 'The paid-resource declaration safety check did not reject its negative fixture.'
@@ -1108,7 +1144,7 @@ try {
 
     Write-Host '7/31 Confirm group-only RBAC, idempotent main, one-shot Owner eligibility, and guarded lifecycle scripts...'
     $mainBicepText = Get-Content -LiteralPath (Join-Path $ProjectDir 'main.bicep') -Raw
-    $groupPattern = '(?m)^param (governanceAdminsGroupObjectId|networkOperatorsGroupObjectId|workloadContributorsGroupObjectId|readOnlyAuditorsGroupObjectId) string$'
+    $groupPattern = '(?m)^param (governanceAdminsGroupObjectId|networkOperatorsGroupObjectId|workloadContributorsGroupObjectId|readOnlyAuditorsGroupObjectId) string\r?$'
     if (([regex]::Matches($mainBicepText, $groupPattern)).Count -ne 4) {
         Stop-Test 'Expected four ordinary Entra security-group parameters in main.bicep.'
     }
@@ -1342,6 +1378,10 @@ function global:az {
                 [pscustomobject]@{ value = @(); nextLink = $false } | ConvertTo-Json -Compress
                 return
             }
+            if ($env:MOCK_UNTRUSTED_REQUEST_NEXT_LINK -eq 'true') {
+                [pscustomobject]@{ value = @(); nextLink = ('https://' + 'example.invalid/page=2') } | ConvertTo-Json -Compress
+                return
+            }
             if ($env:MOCK_MALFORMED_REQUESTS -eq 'true') {
                 [pscustomobject]@{ value = $false } | ConvertTo-Json -Compress
                 return
@@ -1386,7 +1426,7 @@ function global:az {
             if ($env:MOCK_PAGED_PENDING -eq 'true') {
                 [pscustomobject]@{
                     value = @()
-                    nextLink = "https://management.azure.com/subscriptions/$env:MOCK_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleEligibilityScheduleRequests?api-version=2020-10-01&%24filter=atScope()&page=2"
+                    nextLink = "$url&page=2"
                 } | ConvertTo-Json -Compress -Depth 10
                 return
             }
@@ -1446,6 +1486,7 @@ exit $LASTEXITCODE
     $env:MOCK_ANCESTOR_PENDING_REQUEST = 'false'
     $env:MOCK_FALSE_NEXT_LINK = 'false'
     $env:MOCK_FALSE_REQUEST_NEXT_LINK = 'false'
+    $env:MOCK_UNTRUSTED_REQUEST_NEXT_LINK = 'false'
     $env:MOCK_LIVE_STATE_CHANGE_AFTER_PREVIEW = 'false'
     $env:MOCK_MUTATE_SOURCE_AFTER_PREVIEW = 'false'
     $env:OWNER_EXECUTE = 'false'
@@ -1482,20 +1523,28 @@ exit $LASTEXITCODE
     $env:MOCK_SECURITY_AS_STRING = 'false'
     $env:MOCK_MALFORMED_REQUESTS = 'false'
     $env:MOCK_PAGED_PENDING = 'false'
-    foreach ($blockedCase in @('ancestor-schedule', 'ancestor-pending-request', 'false-next-link', 'false-request-next-link')) {
+    foreach ($blockedCase in @('ancestor-schedule', 'ancestor-pending-request', 'false-next-link', 'false-request-next-link', 'untrusted-request-next-link')) {
         New-Item -ItemType File -Path $ownerAzLog -Force | Out-Null
         $env:MOCK_ANCESTOR_SCHEDULE = if ($blockedCase -eq 'ancestor-schedule') { 'true' } else { 'false' }
         $env:MOCK_ANCESTOR_PENDING_REQUEST = if ($blockedCase -eq 'ancestor-pending-request') { 'true' } else { 'false' }
         $env:MOCK_FALSE_NEXT_LINK = if ($blockedCase -eq 'false-next-link') { 'true' } else { 'false' }
         $env:MOCK_FALSE_REQUEST_NEXT_LINK = if ($blockedCase -eq 'false-request-next-link') { 'true' } else { 'false' }
+        $env:MOCK_UNTRUSTED_REQUEST_NEXT_LINK = if ($blockedCase -eq 'untrusted-request-next-link') { 'true' } else { 'false' }
         $blockedOutput = & pwsh -NoLogo -NoProfile -File $ownerTestWrapper 2>&1
         $blockedExitCode = $LASTEXITCODE
         $blockedCalls = Get-Content -LiteralPath $ownerAzLog -Raw
-        if ($blockedExitCode -eq 0 -or $blockedCalls -match 'deployment sub what-if') {
+        if ($blockedExitCode -eq 0 -or $blockedCalls -match 'deployment sub (what-if|create)') {
             Stop-Test "PowerShell Owner eligibility workflow did not fail closed for $blockedCase. Output: $(ConvertTo-TestMessage $blockedOutput)"
+        }
+        if ($blockedCase -eq 'untrusted-request-next-link' -and (
+            $blockedCalls -match 'example\.invalid' -or
+            (ConvertTo-TestMessage $blockedOutput) -notmatch 'Unable to enumerate existing or pending eligibility requests'
+        )) {
+            Stop-Test 'PowerShell Owner eligibility workflow must reject an untrusted pagination URL before issuing an Azure CLI request.'
         }
     }
 
+    $env:MOCK_UNTRUSTED_REQUEST_NEXT_LINK = 'false'
     New-Item -ItemType File -Path $ownerAzLog -Force | Out-Null
     $env:MOCK_ANCESTOR_SCHEDULE = 'true'
     $env:MOCK_ANCESTOR_PENDING_REQUEST = 'false'
@@ -1583,6 +1632,7 @@ exit $LASTEXITCODE
         'MOCK_ANCESTOR_PENDING_REQUEST',
         'MOCK_FALSE_NEXT_LINK',
         'MOCK_FALSE_REQUEST_NEXT_LINK',
+        'MOCK_UNTRUSTED_REQUEST_NEXT_LINK',
         'MOCK_MUTATE_SOURCE_AFTER_PREVIEW',
         'MOCK_LIVE_STATE_CHANGE_AFTER_PREVIEW',
         'MOCK_OPERATOR_BICEP_FILE',
@@ -2071,10 +2121,10 @@ exit $LASTEXITCODE
 
     Write-Host '9/31 Confirm the Critical Infrastructure branch is opt-in and correctly wired...'
     $hierarchyBicepText = Get-Content -LiteralPath (Join-Path $ProjectDir 'modules/hierarchy.bicep') -Raw
-    if ($hierarchyBicepText -notmatch '(?m)^param enableCriticalInfrastructure bool = false$') {
+    if ($hierarchyBicepText -notmatch '(?m)^param enableCriticalInfrastructure bool = false\r?$') {
         Stop-Test 'enableCriticalInfrastructure parameter must default to false.'
     }
-    if ($hierarchyBicepText -notmatch '(?m)^param criticalInfrastructureSubscriptionIds array = \[\]$') {
+    if ($hierarchyBicepText -notmatch '(?m)^param criticalInfrastructureSubscriptionIds array = \[\]\r?$') {
         Stop-Test 'criticalInfrastructureSubscriptionIds parameter must default to an empty array.'
     }
     if (-not $hierarchyBicepText.Contains("displayName: 'Critical Infrastructure'")) {
@@ -2111,13 +2161,13 @@ exit $LASTEXITCODE
 
     Write-Host '10/31 Confirm Defender for Cloud plans are explicit, independent, safe-by-default opt-ins with no auto-granted role and current AMA audit controls exist...'
     $mainBicepText = Get-Content -LiteralPath (Join-Path $ProjectDir 'main.bicep') -Raw
-    if ($mainBicepText -notmatch '(?m)^param enableDefenderCspm bool = false$') {
+    if ($mainBicepText -notmatch '(?m)^param enableDefenderCspm bool = false\r?$') {
         Stop-Test 'enableDefenderCspm parameter must default to false.'
     }
-    if ($mainBicepText -notmatch '(?m)^param enableDefenderForServers bool = false$') {
+    if ($mainBicepText -notmatch '(?m)^param enableDefenderForServers bool = false\r?$') {
         Stop-Test 'enableDefenderForServers parameter must default to false.'
     }
-    if ($mainBicepText -notmatch '(?m)^param enableDefenderForStorage bool = false$') {
+    if ($mainBicepText -notmatch '(?m)^param enableDefenderForStorage bool = false\r?$') {
         Stop-Test 'enableDefenderForStorage parameter must default to false.'
     }
     if ($compiledJson.parameters.enableDefenderCspm.defaultValue -ne $false -or
@@ -2135,17 +2185,17 @@ exit $LASTEXITCODE
         $compiledParameters.parameters.enableDefenderForStorage.value -ne $false) {
         Stop-Test 'Compiled Bicep parameter template enableDefender* values must all be false.'
     }
-    if ($mainBicepText -notmatch '(?m)^param enableDefenderCiem bool = true$') {
+    if ($mainBicepText -notmatch '(?m)^param enableDefenderCiem bool = true\r?$') {
         Stop-Test 'enableDefenderCiem parameter must default to true.'
     }
-    if ($mainBicepText -notmatch "(?m)^param defenderForServersSubPlan string = 'P2'$") {
+    if ($mainBicepText -notmatch "(?m)^param defenderForServersSubPlan string = 'P2'\r?$") {
         Stop-Test 'defenderForServersSubPlan parameter must default to P2.'
     }
-    if ($mainBicepText -notmatch '(?m)^param defenderForServersAgentlessVmScanningEnabled bool = true$') {
+    if ($mainBicepText -notmatch '(?m)^param defenderForServersAgentlessVmScanningEnabled bool = true\r?$') {
         Stop-Test 'defenderForServersAgentlessVmScanningEnabled parameter must default to true.'
     }
     $defenderPlanBicepText = Get-Content -LiteralPath (Join-Path $ProjectDir 'modules/defender-plan-assignment.bicep') -Raw
-    if ($defenderPlanBicepText -notmatch "(?m)^param plan 'cspm' \| 'servers' \| 'storage'$") {
+    if ($defenderPlanBicepText -notmatch "(?m)^param plan 'cspm' \| 'servers' \| 'storage'\r?$") {
         Stop-Test 'defender-plan-assignment.bicep must restrict plan to the cspm/servers/storage enum.'
     }
     if ($defenderPlanBicepText -notmatch "type: enablePlan \? 'SystemAssigned' : 'None'") {
@@ -2212,10 +2262,10 @@ exit $LASTEXITCODE
         $storageDeployment.scope -notmatch 'landingZonesManagementGroupId') {
         Stop-Test 'assign-defender-storage must be scoped to the Landing Zones management group and wired to enableDefenderForStorage/enableDefenderStorageMalwareScanning/defenderStorageMalwareScanningCapGBPerMonthPerStorageAccount.'
     }
-    if ($mainBicepText -notmatch "(?m)^param enableDefenderStorageMalwareScanning bool = false$") {
+    if ($mainBicepText -notmatch "(?m)^param enableDefenderStorageMalwareScanning bool = false\r?$") {
         Stop-Test 'enableDefenderStorageMalwareScanning parameter must default to false so enabling the base Storage plan never silently enables the metered malware-scanning extension.'
     }
-    if ($mainBicepText -notmatch "(?m)^param defenderStorageMalwareScanningCapGBPerMonthPerStorageAccount int = 10000$") {
+    if ($mainBicepText -notmatch "(?m)^param defenderStorageMalwareScanningCapGBPerMonthPerStorageAccount int = 10000\r?$") {
         Stop-Test 'defenderStorageMalwareScanningCapGBPerMonthPerStorageAccount parameter must default to 10000.'
     }
     if ($compiledJson.parameters.enableDefenderStorageMalwareScanning.defaultValue -ne $false) {
@@ -2503,7 +2553,10 @@ if [[ "$1" == 'role' && "$2" == 'assignment' && "$3" == 'list' ]]; then
 fi
 exit 0
 '@ | Set-Content -LiteralPath $mockAzPath -NoNewline
-    if (Get-Command chmod -ErrorAction SilentlyContinue) { & chmod +x $mockAzPath }
+    if (-not $IsWindows) {
+        & chmod +x $mockAzPath
+        if ($LASTEXITCODE -ne 0) { Stop-Test 'Unable to make the teardown Azure CLI mock executable.' }
+    }
 
     # PowerShell command resolution on Windows honors PATHEXT (.cmd, .exe, etc.), so an
     # extensionless mock named "az" is invisible to it there and Get-Command would silently
@@ -2545,6 +2598,7 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     Write-Error "az resolved to '$resolvedSource' instead of the temporary mock directory '$ExpectedMockDir'."
     exit 1
 }
+function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
 & $TeardownScript $ParameterFile -Execute
 '@ | Set-Content -LiteralPath $wrapperScript
 
@@ -2579,7 +2633,7 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     })
     $templateJson | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $whitespaceParamFile
 
-    if (Get-Command bash -ErrorAction SilentlyContinue) {
+    if ($RunBashTests) {
         if (Test-Path -LiteralPath $azCallLog) { Remove-Item -LiteralPath $azCallLog }
         New-Item -ItemType File -Path $azCallLog | Out-Null
         $originalPath = $env:PATH
@@ -2612,7 +2666,7 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     $env:AZ_CALL_LOG = $azCallLog
     $env:ESLZ_TEARDOWN_CONFIRMATION = 'DELETE-ESLZ-DEMO'
     $ps1Script = Join-Path $ProjectDir 'scripts/teardown.ps1'
-    $nestedOutput = 'eslz-demo' | & pwsh -NoLogo -NoProfile -File $wrapperScript -ParameterFile $whitespaceParamFile -ExpectedMockDir $mockBinDir -TeardownScript $ps1Script 2>&1
+    $nestedOutput = & pwsh -NoLogo -NoProfile -NonInteractive -File $wrapperScript -ParameterFile $whitespaceParamFile -ExpectedMockDir $mockBinDir -TeardownScript $ps1Script 2>&1
     $nestedExitCode = $LASTEXITCODE
     $env:PATH = $originalPath
     Remove-Item Env:\AZ_CALL_LOG -ErrorAction SilentlyContinue
@@ -2642,7 +2696,7 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     $env:PATH = "$mockBinDir$([System.IO.Path]::PathSeparator)$env:PATH"
     $env:AZ_CALL_LOG = $azCallLog
     $env:ESLZ_TEARDOWN_CONFIRMATION = 'DELETE-ESLZ-DEMO'
-    $whitespaceOutput = 'eslz-demo' | & pwsh -NoLogo -NoProfile -File $wrapperScript -ParameterFile $whitespaceOnlyParameterFile -ExpectedMockDir $mockBinDir -TeardownScript $ps1Script 2>&1
+    $whitespaceOutput = & pwsh -NoLogo -NoProfile -NonInteractive -File $wrapperScript -ParameterFile $whitespaceOnlyParameterFile -ExpectedMockDir $mockBinDir -TeardownScript $ps1Script 2>&1
     $whitespaceExitCode = $LASTEXITCODE
     $env:PATH = $originalPath
     Remove-Item Env:\AZ_CALL_LOG -ErrorAction SilentlyContinue
@@ -2655,6 +2709,7 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     }
 
     Write-Host '19/31 Parse every PowerShell lifecycle and test script...'
+    & (Join-Path $ScriptDir 'validate-bicep-test-helpers.ps1')
     & (Join-Path $ScriptDir 'validate-tag-policy-migration.ps1')
     $powerShellFiles = @(
         Get-ChildItem (Join-Path $ProjectDir 'scripts') -Filter '*.ps1'
@@ -2677,16 +2732,16 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     & (Join-Path $ScriptDir 'validate-initiative-composition.ps1')
 
     Write-Host '21/31 Validate the v2 control catalog (schema-equivalent checks + matrix consistency)...'
-    & (Join-Path $ScriptDir 'validate-control-catalog.ps1')
+    & (Join-Path $ScriptDir 'validate-control-catalog.ps1') -SchemaBackend $(if ($IsWindows) { 'native' } else { 'auto' })
 
     Write-Host '22/31 Backend parity and structural-matrix regression tests (bash/python, bash/jq, pwsh/python, pwsh/native)...'
-    if (Get-Command bash -ErrorAction SilentlyContinue) {
+    if ($RunBashTests) {
         & bash (Join-Path $ScriptDir 'uri-grammar-forced-fallback-tests.sh')
         if ($LASTEXITCODE -ne 0) {
             Stop-Test 'tests/uri-grammar-forced-fallback-tests.sh failed.'
         }
     } else {
-        Write-Host '  (No bash interpreter found on PATH; relying on tests/test.sh to cover this step.)'
+        Write-Host '  (skipping Unix backend parity checks: run tests/test.sh on macOS or Linux)'
     }
 
     Write-Host '23/31 Validate Entra Conditional Access and PIM demo artifacts...'
@@ -3442,13 +3497,12 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
         $caseValues = $benchmarkCase | ForEach-Object { $_.ToString().ToLowerInvariant() }
         $caseParametersPath = Join-Path $TempDir ("benchmark-" + ($caseValues -join '-') + '.bicepparam')
         $caseText = $benchmarkParameterTemplateText `
-            -replace "(?m)^using '\.\./main\.bicep'$", "using '../../main.bicep'" `
+            -replace "(?m)^using '\.\./main\.bicep'\r?$", "using '../../main.bicep'" `
             -replace '(?m)^param enableMicrosoftCloudSecurityBenchmark = .*$', "param enableMicrosoftCloudSecurityBenchmark = $($caseValues[0])" `
             -replace '(?m)^param enableCisAzureFoundationsBenchmark = .*$', "param enableCisAzureFoundationsBenchmark = $($caseValues[1])" `
             -replace '(?m)^param enableNistSp80053Rev5 = .*$', "param enableNistSp80053Rev5 = $($caseValues[2])"
         Set-Content -LiteralPath $caseParametersPath -Value $caseText
-        & az bicep build-params --file $caseParametersPath --outfile "$caseParametersPath.json"
-        if ($LASTEXITCODE -ne 0) { Stop-Test "Benchmark combination $($caseValues -join ',') failed to compile." }
+        Invoke-TestBicep -Operation build-params -File $caseParametersPath -OutFile "$caseParametersPath.json"
         $caseParameters = Get-Content -LiteralPath "$caseParametersPath.json" -Raw | ConvertFrom-Json
         if ($caseParameters.parameters.enableMicrosoftCloudSecurityBenchmark.value -ne $benchmarkCase[0] -or
             $caseParameters.parameters.enableCisAzureFoundationsBenchmark.value -ne $benchmarkCase[1] -or
@@ -3850,15 +3904,14 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     }
     foreach ($loggingCase in $loggingCases) {
         $caseParametersPath = Join-Path $TempDir ("logging-" + $loggingCase.Name + '.bicepparam')
-        $caseText = $loggingParameterTemplateText -replace "(?m)^using '\.\./main\.bicep'$", "using '../../main.bicep'"
+        $caseText = $loggingParameterTemplateText -replace "(?m)^using '\.\./main\.bicep'\r?$", "using '../../main.bicep'"
         foreach ($property in @('deployCentralLogAnalytics', 'existingLogAnalyticsWorkspaceResourceId', 'activityLogExportPolicyEffect', 'resourceDiagnosticsPolicyEffect', 'resourceDiagnosticsCategoryGroup', 'deployRoleAssignments', 'deployLoggingRemediationRoleAssignments')) {
             $value = $loggingCase.$property
             $valueLiteral = if ($value -is [bool]) { $value.ToString().ToLowerInvariant() } else { "'$value'" }
             $caseText = $caseText -replace "(?m)^param $property = .*$", "param $property = $valueLiteral"
         }
         Set-Content -LiteralPath $caseParametersPath -Value $caseText
-        & az bicep build-params --file $caseParametersPath --outfile "$caseParametersPath.json"
-        if ($LASTEXITCODE -ne 0) { Stop-Test "Logging matrix case $($loggingCase.Name) failed to compile." }
+        Invoke-TestBicep -Operation build-params -File $caseParametersPath -OutFile "$caseParametersPath.json"
         $caseParameters = Get-Content -LiteralPath "$caseParametersPath.json" -Raw | ConvertFrom-Json
         foreach ($property in @('deployCentralLogAnalytics', 'existingLogAnalyticsWorkspaceResourceId', 'activityLogExportPolicyEffect', 'resourceDiagnosticsPolicyEffect', 'resourceDiagnosticsCategoryGroup', 'deployRoleAssignments', 'deployLoggingRemediationRoleAssignments')) {
             if ($caseParameters.parameters.$property.value -cne $loggingCase.$property) {
@@ -4433,8 +4486,7 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
         }
     }
     $backupVaultTemplate = Join-Path $TempDir 'backup-vault.json'
-    & az bicep build --file (Join-Path $ProjectDir 'modules/backup-vault.bicep') --outfile $backupVaultTemplate
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'The optional backup vault module failed to compile.' }
+    Invoke-TestBicep -Operation build -File (Join-Path $ProjectDir 'modules/backup-vault.bicep') -OutFile $backupVaultTemplate
     $backupVaultJson = Get-Content -LiteralPath $backupVaultTemplate -Raw | ConvertFrom-Json
     if ($backupVaultJson.parameters.deployRecoveryServicesVault.defaultValue -ne $false -or
         $backupVaultJson.parameters.publicNetworkAccess.defaultValue -ne 'Disabled' -or
@@ -4463,15 +4515,14 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     $approvedVaultCentralUs = "$approvedVaultPrefix/rsv-workload-centralus"
     $approvedBackupVaultLiteral = "param approvedBackupVaults = [{workload: 'corp', region: 'eastus2', vaultResourceId: '$approvedVaultEastUs2', backupPolicyResourceId: '$approvedVaultEastUs2/backupPolicies/vm-daily', inclusionTagValues: ['corp-daily']}, {workload: 'corp', region: 'centralus', vaultResourceId: '$approvedVaultCentralUs', backupPolicyResourceId: '$approvedVaultCentralUs/backupPolicies/vm-daily', inclusionTagValues: ['corp-daily']}]"
     $backupParametersText = $benchmarkParameterTemplateText `
-        -replace "(?m)^using '\.\./main\.bicep'$", "using '../../main.bicep'" `
+        -replace "(?m)^using '\.\./main\.bicep'\r?$", "using '../../main.bicep'" `
         -replace '(?m)^param approvedVaultRegions = .*$', "param approvedVaultRegions = ['eastus2', 'centralus']" `
         -replace '(?m)^param backupRetentionStandardId = .*$', "param backupRetentionStandardId = 'RETENTION-STD-001'" `
         -replace '(?m)^param vmBackupInclusionTagName = .*$', "param vmBackupInclusionTagName = 'BackupPolicy'" `
         -replace '(?m)^param enableVmBackupRemediation = .*$', 'param enableVmBackupRemediation = true' `
         -replace '(?m)^param approvedBackupVaults = .*$', $approvedBackupVaultLiteral
     Set-Content -LiteralPath $backupParametersPath -Value $backupParametersText
-    & az bicep build-params --file $backupParametersPath --outfile "$backupParametersPath.json"
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'The approved existing-vault integration path failed to compile.' }
+    Invoke-TestBicep -Operation build-params -File $backupParametersPath -OutFile "$backupParametersPath.json"
     $backupParametersJson = Get-Content -LiteralPath "$backupParametersPath.json" -Raw | ConvertFrom-Json
     $compiledApprovedVaults = @($backupParametersJson.parameters.approvedBackupVaults.value)
     if ($backupParametersJson.parameters.enableVmBackupRemediation.value -ne $true -or
@@ -4506,11 +4557,11 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
         Stop-Test 'PowerShell 7 (pwsh) is required to validate the preflight script exit code.'
     }
     $preflightScripts = @((Join-Path $ProjectDir 'scripts/preflight.ps1'))
-    if (Get-Command bash -ErrorAction SilentlyContinue) {
+    if ($RunBashTests) {
         $preflightScripts += Join-Path $ProjectDir 'scripts/preflight.sh'
     }
     else {
-        Write-Host '    (skipping Bash preflight dependency check: bash is not available)'
+        Write-Host '    (skipping Bash preflight dependency check: run tests/test.sh on macOS or Linux)'
     }
     foreach ($preflightScript in $preflightScripts) {
         $preflightExitCode = 0
@@ -4789,17 +4840,17 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
             'REQ-ID-06 CIEM findings',
             'optional Defender plan signals from REQ-DEF-02/03/04',
             'Microsoft Sentinel onboarding/analytics/incident workflow evidence',
-            'service-principal/access-review governance dependency issue: https://github.com/johnstel/azureeslzmultisubdemo/issues/21',
+            "service-principal/access-review governance dependency issue: $repositoryUrl/issues/21",
             'learn.microsoft.com/en-us/azure/compliance/offerings/offering-nerc',
             'learn.microsoft.com/en-us/azure/compliance/offerings/offering-nerc#shared-responsibility-in-the-cloud',
             'nerc.com/standards/reliability-standards/cip',
             'issues/22')) {
         if ($nercMatrixText -notmatch [regex]::Escape($requiredSnippet)) {
-            Stop-Test "The NERC CIP matrix is missing required content: $requiredSnippet"
+            Stop-Test "The NERC CIP matrix is missing required content: $requiredSnippet. If links were rewritten by email protection (for example, URL Defense or Safe Links), obtain tests/test.ps1 and docs/NERC-CIP-MATRIX.md together from the same Git commit using Git or a repository ZIP, not copied email content. Preserve local parameter files."
         }
     }
     foreach ($staleSnippet in @(
-            'technical control-matrix dependency issue: https://github.com/johnstel/azureeslzmultisubdemo/issues/21',
+            "technical control-matrix dependency issue: $repositoryUrl/issues/21",
             'REQ-DEF-04 Sentinel onboarding controls')) {
         if ($nercMatrixText -match [regex]::Escape($staleSnippet)) {
             Stop-Test "The NERC CIP matrix still contains stale text: $staleSnippet"
@@ -5041,7 +5092,7 @@ finally {
     # force it loose here so cleanup of $TempDir does not fail with "Device
     # or resource busy".
     $leftoverMount = Join-Path $TempDir 'case-insensitive-mnt'
-    if ((Get-Command mountpoint -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $leftoverMount)) {
+    if (-not $IsWindows -and (Get-Command mountpoint -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $leftoverMount)) {
         & mountpoint -q $leftoverMount 2>$null
         if ($LASTEXITCODE -eq 0) {
             & sudo -n umount -l $leftoverMount 2>$null 1>$null
@@ -5049,8 +5100,5 @@ finally {
     }
     if (Test-Path -LiteralPath $TempDir) {
         Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Path -LiteralPath $ArtifactsParent) {
-        Remove-Item -LiteralPath $ArtifactsParent -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

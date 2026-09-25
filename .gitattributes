@@ -1,0 +1,10 @@
+# Normalize text to LF, except PowerShell scripts checked out as CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+
+# Squad: union merge for append-only team state files
+.squad/decisions.md merge=union
+.squad/agents/*/history.md merge=union
+.squad/log/** merge=union
+.squad/orchestration-log/** merge=union
+.squad/rai/audit-trail.md merge=union

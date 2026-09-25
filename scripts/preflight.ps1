@@ -164,12 +164,78 @@ function Test-ResourceIdParameter {
 }
 
 function Invoke-AzJson {
-    param([string[]]$Arguments)
-    $output = & az @Arguments 2>$null
+    param(
+        [string[]]$Arguments,
+        [string]$Operation = 'Azure CLI JSON request'
+    )
+    # Handle the exit code ourselves and leave native stderr visible, separate from JSON.
+    $PSNativeCommandUseErrorActionPreference = $false
+    $output = & az @Arguments
     if ($LASTEXITCODE -ne 0) {
         return $null
     }
-    return (($output -join [Environment]::NewLine) | ConvertFrom-Json)
+    $json = ($output -join [Environment]::NewLine).Trim()
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        Stop-Preflight "Azure CLI returned an empty response for the $Operation`: az $($Arguments -join ' ')"
+    }
+    try {
+        $result = $json | ConvertFrom-Json -NoEnumerate
+    }
+    catch {
+        Stop-Preflight "Azure CLI returned invalid JSON for the $Operation`: az $($Arguments -join ' '). $($_.Exception.Message)"
+    }
+    if ($result -isnot [System.Management.Automation.PSCustomObject]) {
+        Stop-Preflight "Azure CLI returned an unexpected JSON shape for the $Operation`: expected a JSON object."
+    }
+    return $result
+}
+
+function Test-TenantRootAccess {
+    param(
+        [string]$TenantRoot,
+        [string]$SignedInTenant
+    )
+    # Handle native failures here so the CLI diagnostic and recovery steps stay together.
+    $PSNativeCommandUseErrorActionPreference = $false
+    $output = @(& az account management-group show --name $TenantRoot --output none 2>&1)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        $details = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        if ([string]::IsNullOrWhiteSpace($details)) { $details = 'Azure CLI returned no diagnostic output.' }
+        Stop-Preflight @"
+Cannot read tenant-root management group '$TenantRoot' in active tenant '$SignedInTenant' (Azure CLI exit code $exitCode).
+Azure CLI diagnostic:
+$details
+Verify tenantRootManagementGroupId is the management-group ID, not its display name or a subscription ID. The tenant root group's ID equals its Microsoft Entra tenant ID.
+Check the active account with 'az account show --output json'; if the tenant is wrong, sign in with 'az login --tenant <intended-tenant-guid>' and select the intended subscription.
+For AuthorizationFailed/Forbidden, ask an authorized administrator for Microsoft.Management/managementGroups/read at the supplied management-group scope (Reader or an appropriate deployment role). Subscription Owner and Microsoft Entra Global Administrator alone do not grant access to the tenant root.
+For NotFound, verify the ID and directory in Azure portal > Management groups. For CLI, authentication, or network errors, resolve the diagnostic above before retrying.
+Preflight remains read-only; it does not create management groups, elevate access, or change role assignments.
+"@
+    }
+}
+
+function Test-ScopeAccess {
+    param(
+        [string]$Scope,
+        [string]$Label
+    )
+    $PSNativeCommandUseErrorActionPreference = $false
+    # --all conflicts with --scope; display-name enrichment is not needed for an ARM read check.
+    $output = @(& az role assignment list --scope $Scope --include-inherited --fill-principal-name false --fill-role-definition-name false --output none 2>&1)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        $details = ($output | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        if ([string]::IsNullOrWhiteSpace($details)) { $details = 'Azure CLI returned no diagnostic output.' }
+        Stop-Preflight @"
+Cannot read effective role assignments at $Label scope $Scope (Azure CLI exit code $exitCode).
+Azure CLI diagnostic:
+$details
+For AuthorizationFailed/Forbidden, request Microsoft.Authorization/roleAssignments/read at this scope (Reader or an appropriate deployment role). Subscription access does not grant access to a parent management group.
+For CLI, authentication, or network errors, resolve the diagnostic above before retrying; do not grant broader access to fix a command failure.
+Preflight remains read-only; it does not change role assignments or bypass permission checks.
+"@
+    }
 }
 
 function Invoke-Preflight {
@@ -428,21 +494,7 @@ foreach ($criticalSubscription in $criticalSubscriptions) {
     Test-Subscription $criticalSubscription 'critical infrastructure'
 }
 
-& az account management-group show --name $tenantRoot --output none 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Stop-Preflight "Cannot read tenant-root management group '$tenantRoot'. Check the ID and tenant permissions."
-}
-
-function Test-ScopeAccess {
-    param(
-        [string]$Scope,
-        [string]$Label
-    )
-    & az role assignment list --scope $Scope --include-inherited --all --output none 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Stop-Preflight "Cannot read effective role assignments at $Label scope $Scope; request Reader access before deployment."
-    }
-}
+Test-TenantRootAccess -TenantRoot $tenantRoot -SignedInTenant $signedInTenant
 
 $tenantRootScope = "/providers/Microsoft.Management/managementGroups/$tenantRoot"
 Test-ScopeAccess $tenantRootScope 'tenant-root management group'
@@ -453,13 +505,16 @@ function Test-EffectivePermission {
         [string]$Scope,
         [string]$Action
     )
-    $permissions = Invoke-AzJson @(
+    $permissions = Invoke-AzJson -Operation 'effective-permissions request' -Arguments @(
         'rest', '--method', 'get',
-        '--url', "https://management.azure.com$Scope/providers/Microsoft.Authorization/permissions?api-version=2015-07-01",
+        '--url', "https://management.azure.com$Scope/providers/Microsoft.Authorization/permissions?api-version=2022-04-01",
         '--output', 'json'
     )
     if ($null -eq $permissions) {
-        Stop-Preflight "Cannot determine effective permissions at $Scope; request $Action before deployment."
+        Stop-Preflight "Azure CLI could not query effective permissions at $Scope (required action: $Action). Review the Azure CLI diagnostic above."
+    }
+    if ($null -eq $permissions.PSObject.Properties['value'] -or $permissions.value -isnot [array]) {
+        Stop-Preflight "Azure returned an invalid effective-permissions response at ${Scope}: the JSON response has no value array."
     }
     if (-not (Test-ActionPermitted -Action $Action -Permissions $permissions)) {
         Stop-Preflight "The deployment caller lacks $Action at $Scope; grant the required role before deployment."

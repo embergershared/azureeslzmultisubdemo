@@ -941,13 +941,108 @@ duplicate IDs, checks the signed-in tenant, confirms both subscriptions exist
 and are enabled, and verifies that the tenant-root management group can be read.
 What-if runs a tenant-scope preview but does not deploy.
 
-You can also run local tests without signing in.
-
-Windows PowerShell:
+If preflight reports `Cannot read tenant-root management group`, use the included
+Azure CLI diagnostic and active tenant to identify the cause. Run these read-only
+checks on the machine where preflight failed:
 
 ```powershell
-.\tests\test.ps1
+az account show --query "{tenantId:tenantId, subscriptionId:id, account:user.name}" --output json
+$parameters = Get-Content .\parameters\demo.parameters.json -Raw | ConvertFrom-Json
+az account management-group show --name $parameters.parameters.tenantRootManagementGroupId.value --output json
 ```
+
+The actual tenant root management-group ID equals the Microsoft Entra tenant ID;
+do not use a display name or subscription ID. If the active directory is wrong,
+sign in with `az login --tenant <intended-tenant-guid>` and select the intended
+subscription with `az account set --subscription <subscription-guid>`.
+For `AuthorizationFailed`/`Forbidden`, an authorized administrator must grant
+management-group read access at that scope; subscription Owner and Entra Global
+Administrator alone do not grant it. Reader permits this read check but does not
+satisfy the deployment permissions listed above. For `NotFound`, verify the ID
+and directory in **Azure portal > Management groups**. Resolve CLI, authentication,
+or network failures according to the original diagnostic rather than granting
+broader access. Preflight never elevates access, creates a missing group, or
+bypasses the check. Passing offline tests does not establish live Azure access.
+
+If an older preflight reports `Cannot read effective role assignments`, update
+the script before changing permissions: it incorrectly combined `--scope` and
+`--all`, which Azure CLI rejects with `group or scope are not required when
+--all is used`. The scoped read now retains `--include-inherited` and disables
+principal/role display-name lookups, avoiding unnecessary Microsoft Graph and
+role-definition queries. Actual read failures still stop preflight and include
+the CLI diagnostic. Only an authorization failure warrants requesting
+`Microsoft.Authorization/roleAssignments/read` at the reported scope; passing
+this check does not bypass the subsequent deployment-permission checks.
+
+You can also run local tests without signing in.
+
+Windows PowerShell 7 (`pwsh`), with Azure CLI and its Bicep CLI installed:
+
+```powershell
+pwsh -NoProfile -File .\tests\test.ps1
+```
+
+Windows PowerShell 5.1 is not supported. Bash, WSL, ripgrep, and Python are
+not required for the Windows test suite. Bash-only runtime and syntax checks
+are explicitly skipped on Windows (including when WSL's `bash.exe` is on
+PATH); source safety assertions and PowerShell lifecycle tests still run.
+Run the Bash suite on macOS or Linux for the complementary Unix coverage.
+
+The teardown and legacy-tag migration fixtures in steps 18 and 19 use an
+isolated mock Azure CLI and supply confirmation answers automatically. No
+operator input is required. Older test copies may display `Type the demo root
+ID` or `Type the validated tenant` prompts; these are fixture output, not
+instructions to approve a live deletion. If a test stalls there, cancel with
+Ctrl+C and update `tests/test.ps1` and `tests/validate-tag-policy-migration.ps1`
+together. The real lifecycle scripts still require explicit confirmation.
+
+If step 1 reports `README is missing required v2 guidance`, ensure the README
+and test script come from the same Git commit. A URL Defense or Safe Links URL
+in the error can indicate that email protection rewrote a link in the script
+or README; it may also have rewritten only the forwarded error message.
+Obtain a clean copy with Git or a repository ZIP rather than copying scripts
+from email. Preserve local parameter files, and do not replace canonical GitHub
+links with mail-protection URLs or skip the validation.
+
+The same recovery applies if step 30 reports `The NERC CIP matrix is missing
+required content` for the service-principal/access-review governance dependency
+link. Obtain `tests/test.ps1` and `docs/NERC-CIP-MATRIX.md` together from the same
+clean Git commit. The test assembles the canonical issue URL to avoid a
+mail-rewritten executable literal; the matrix must still contain the original
+GitHub link, not a URL Defense or Safe Links wrapper.
+
+Mail-rewritten test fixtures can also cause the Owner eligibility pagination
+test to report `Unable to enumerate existing or pending eligibility requests`.
+If the reported source line is the trusted ARM URL check, the workflow rejected
+an unexpected URL before following it. Obtain clean copies of `tests/test.ps1`
+and `scripts/owner-eligibility-request.ps1` from the same commit; do not relax
+the ARM host check or accept a generic failure as a passing pagination test.
+
+If initiative composition validation reports `Initiative module must target
+management-group scope`, compare the expected and actual schema in the error.
+The module must retain `targetScope = 'managementGroup'`; a mail-rewritten schema
+URL in the validator is not a reason to change that scope. Obtain the validator
+and Bicep sources from the same clean repository copy. To rerun only this check:
+
+```powershell
+pwsh -NoProfile -File .\tests\validate-initiative-composition.ps1
+```
+
+An `Invalid pattern` error from `validate-control-catalog.ps1` that contains
+`urldefense.com` indicates mail protection rewrote executable regular-expression
+text. Replace the affected repository copy from Git or a repository ZIP,
+preserving local parameter files; do not paste protected links into regexes.
+Rerun the catalog check without Python dependencies:
+
+```powershell
+pwsh -NoProfile -File .\tests\validate-control-catalog.ps1 -SchemaBackend native
+```
+
+PowerShell tests report each distinct Bicep diagnostic once per run, including
+across nested validators and parameter matrices. Compiler failures include the
+input path, exit code, and full diagnostics. Warnings are not disabled: outdated
+API versions and Bicep upgrade notices remain visible, and the main-template
+nullable-output (`BCP318`) check still fails the suite.
 
 macOS or Linux:
 
@@ -1022,6 +1117,7 @@ in the [Beginner's Guide](docs/BEGINNERS-GUIDE.md).
 |---|---|---|
 | `Parameter file still contains REPLACE_WITH_* placeholders` | The local parameter file was never completed | [Beginner's Guide](docs/BEGINNERS-GUIDE.md#troubleshooting) |
 | `AuthorizationFailed` on management groups or policy | The deployment principal lacks the rights listed under [Required permissions](#required-permissions) | Beginner's Guide |
+| `Cannot determine effective permissions` or `Azure CLI could not query effective permissions` | The permissions request failed; this is not proof that policy-write access is missing. Use the updated preflight scripts to see the underlying Azure CLI diagnostic, then resolve the reported TLS/proxy, sign-in, API, or authorization error | [Preflight permission troubleshooting](docs/BEGINNERS-GUIDE.md#preflight-permission-query-failures) |
 | Deployment fails validating a parameter that no longer exists | A v1 parameter file was reused; `subscriptionOwnersGroupObjectId` was removed in v2 | [Migrating from v1 to v2](docs/MIGRATION-V1-TO-V2.md) |
 | Explicit configuration-error resource about the workspace | `deployCentralLogAnalytics` and `existingLogAnalyticsWorkspaceResourceId` were both set, or Sentinel was requested with neither | [Shared services and cost](docs/SHARED-SERVICES-AND-COST.md) |
 | A deployment is unexpectedly blocked | A deny assignment was promoted to `Default` | [Enforcement and remediation](docs/ENFORCEMENT-AND-REMEDIATION.md) |
