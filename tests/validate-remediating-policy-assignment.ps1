@@ -5,6 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir 'bicep-test-helpers.ps1')
 $ProjectDir = Split-Path -Parent $ScriptDir
 $ArtifactsParent = Join-Path $ProjectDir '.test-artifacts'
 $TempDir = Join-Path $ArtifactsParent ("remediating-policy-assignment-ps1-" + [guid]::NewGuid().ToString('N'))
@@ -129,10 +130,9 @@ try {
     }
 
     $compiledShapes = Join-Path $TempDir 'remediating-policy-assignment-shapes.json'
-    & az bicep build `
-        --file (Join-Path $ScriptDir 'fixtures/remediating-policy-assignment-shapes.bicep') `
-        --outfile $compiledShapes | Out-Null
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Remediating policy assignment shape fixture build failed.' }
+    Invoke-TestBicep -Operation build `
+        -File (Join-Path $ScriptDir 'fixtures/remediating-policy-assignment-shapes.bicep') `
+        -OutFile $compiledShapes
 
     Assert-BicepBuildFails `
         -Fixture (Join-Path $ScriptDir 'fixtures/invalid-remediating-assignment-missing-identity.bicep') `

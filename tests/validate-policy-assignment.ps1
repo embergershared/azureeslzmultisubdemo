@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir 'bicep-test-helpers.ps1')
 $ProjectDir = Split-Path -Parent $ScriptDir
 $ArtifactsParent = Join-Path $ProjectDir '.test-artifacts'
 $TempDir = Join-Path $ArtifactsParent ("policy-assignment-ps1-" + [guid]::NewGuid().ToString('N'))
@@ -322,10 +323,7 @@ function Assert-BicepBuildCompilesThroughExemptionValidationPath {
         [string]$TempDirectory
     )
     $compiledFixture = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($Fixture) + '.json')
-    & az bicep build --file $Fixture --outfile $compiledFixture | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Stop-Test "Bicep failed to compile $Description."
-    }
+    Invoke-TestBicep -Operation build -File $Fixture -OutFile $compiledFixture
     $compiledFixtureJson = Get-Content -LiteralPath $compiledFixture -Raw | ConvertFrom-Json
     $validationTemplates = @(
         Find-JsonObjects -Node $compiledFixtureJson -Predicate {
@@ -351,24 +349,21 @@ try {
 
     if ([string]::IsNullOrEmpty($CompiledMainTemplate)) {
         $CompiledMainTemplate = Join-Path $TempDir 'main.json'
-        & az bicep build --file (Join-Path $ProjectDir 'main.bicep') --outfile $CompiledMainTemplate | Out-Null
-        if ($LASTEXITCODE -ne 0) { Stop-Test 'main.bicep build failed.' }
+        Invoke-TestBicep -Operation build -File (Join-Path $ProjectDir 'main.bicep') -OutFile $CompiledMainTemplate
     }
     if (-not (Test-Path -LiteralPath $CompiledMainTemplate -PathType Leaf)) {
         Stop-Test "Compiled main template not found: $CompiledMainTemplate"
     }
 
     $compiledShapes = Join-Path $TempDir 'policy-assignment-shapes.json'
-    & az bicep build `
-        --file (Join-Path $ScriptDir 'fixtures/policy-assignment-shapes.bicep') `
-        --outfile $compiledShapes | Out-Null
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Policy assignment shape fixture build failed.' }
+    Invoke-TestBicep -Operation build `
+        -File (Join-Path $ScriptDir 'fixtures/policy-assignment-shapes.bicep') `
+        -OutFile $compiledShapes
 
     $compiledExemptionShapes = Join-Path $TempDir 'policy-exemption-shapes.json'
-    & az bicep build `
-        --file (Join-Path $ScriptDir 'fixtures/policy-exemption-shapes.bicep') `
-        --outfile $compiledExemptionShapes | Out-Null
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Policy exemption shape fixture build failed.' }
+    Invoke-TestBicep -Operation build `
+        -File (Join-Path $ScriptDir 'fixtures/policy-exemption-shapes.bicep') `
+        -OutFile $compiledExemptionShapes
 
     Assert-BicepBuildFails `
         -Fixture (Join-Path $ScriptDir 'fixtures/invalid-policy-assignment-name.bicep') `

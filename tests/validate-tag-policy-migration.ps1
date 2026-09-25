@@ -36,120 +36,110 @@ try {
 }
 '@ | Set-Content -LiteralPath $parameterFile
 
-    $mockPython = Join-Path $MockBin 'az-mock.py'
+    $mockAzPath = Join-Path $MockBin 'az.ps1'
     @'
-import json
-import os
-import sys
+Add-Content -LiteralPath $env:AZ_CALL_LOG -Value ($args -join ' ')
+$scenario = $env:AZ_MOCK_SCENARIO
+$command = ($args | Where-Object { $_ -notin '--output', 'json' }) -join ' '
+$demo = '/providers/Microsoft.Management/managementGroups/eslz-demo'
+$landing = "$demo-landingzones"
+$workload = "$demo-corp"
+$legacyDefinition = "$demo/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-workload-rg-tags"
+$initiative = "$demo/providers/Microsoft.Authorization/policySetDefinitions/eslz-demo-required-rg-tags"
+$builtIn = '/providers/Microsoft.Authorization/policyDefinitions/96670d01-0a4d-4649-9c89-2d3abc0a5025'
+$references = [ordered]@{
+    'require-cost-center' = 'CostCenter'
+    'require-application-name' = 'ApplicationName'
+    'require-owner' = 'Owner'
+    'require-environment' = 'Environment'
+    'require-data-classification' = 'DataClassification'
+    'require-ssp-id' = 'SSP-ID'
+}
 
-args = sys.argv[1:]
-with open(os.environ["AZ_CALL_LOG"], "a", encoding="utf-8") as stream:
-    stream.write(" ".join(args) + "\n")
-scenario = os.environ.get("AZ_MOCK_SCENARIO", "present")
-command = " ".join(arg for arg in args if arg not in ("--output", "json"))
-demo = "/providers/Microsoft.Management/managementGroups/eslz-demo"
-landing = demo + "-landingzones"
-workload = demo + "-corp"
-legacy_definition = demo + "/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-workload-rg-tags"
-initiative = demo + "/providers/Microsoft.Authorization/policySetDefinitions/eslz-demo-required-rg-tags"
-built_in = "/providers/Microsoft.Authorization/policyDefinitions/96670d01-0a4d-4649-9c89-2d3abc0a5025"
-references = [
-    ("require-cost-center", "CostCenter"),
-    ("require-application-name", "ApplicationName"),
-    ("require-owner", "Owner"),
-    ("require-environment", "Environment"),
-    ("require-data-classification", "DataClassification"),
-    ("require-ssp-id", "SSP-ID"),
-]
-
-def emit(value):
-    print(json.dumps(value))
-
-if command == "account show":
-    subscription = "99999999-9999-9999-9999-999999999999" if scenario == "wrong-active-subscription" else "11111111-1111-1111-1111-111111111111"
-    emit({"tenantId": "tenant-a", "id": subscription, "state": "Enabled"})
-elif command.startswith("account show --subscription "):
-    tenant = "tenant-b" if scenario == "wrong-subscription-tenant" and command.endswith("22222222-2222-2222-2222-222222222222") else "tenant-a"
-    subscription = command.rsplit(" ", 1)[1]
-    state = "Disabled" if scenario == "disabled-subscription" and subscription.startswith("2222") else "Enabled"
-    emit({"tenantId": tenant, "id": subscription, "state": state})
-elif command == "account management-group show --name tenant-root":
-    emit({"id": "/providers/Microsoft.Management/managementGroups/tenant-root"})
-elif command == "account management-group show --name eslz-demo":
-    emit({"id": demo, "details": {"parent": {"id": "/providers/Microsoft.Management/managementGroups/tenant-root"}}})
-elif command == "account management-group show --name eslz-demo-landingzones":
-    emit({"id": landing, "details": {"parent": {"id": demo}}})
-elif command == "account management-group show --name eslz-demo-corp":
-    parent = demo if scenario == "wrong-ancestry" else landing
-    emit({"id": workload, "details": {"parent": {"id": parent}}})
-elif command == "policy set-definition show --name eslz-demo-required-rg-tags --management-group eslz-demo":
-    if scenario == "replacement-missing":
-        print("ERROR: (ResourceNotFound) replacement missing", file=sys.stderr)
-        sys.exit(3)
-    policy_references = [
-        {
-            "policyDefinitionId": demo + "/providers/Microsoft.Authorization/policyDefinitions/unrelated"
-                if scenario == "replacement-definition-wrong" and reference_id == "require-owner" else built_in,
-            "definitionVersion": (
-                None if scenario == "replacement-version-missing" and reference_id == "require-owner"
-                else "2.*.*" if scenario == "replacement-version-wrong" and reference_id == "require-owner"
-                else "1.*.*"
-            ),
-            "policyDefinitionReferenceId": reference_id,
-            "parameters": {"tagName": {"value": (
-                "Application" if scenario == "replacement-tag-renamed" and reference_id == "require-application-name"
-                else tag_name
-            )}},
+if ($command -eq 'account show') {
+    $subscription = if ($scenario -eq 'wrong-active-subscription') { '99999999-9999-9999-9999-999999999999' } else { '11111111-1111-1111-1111-111111111111' }
+    $result = @{ tenantId = 'tenant-a'; id = $subscription; state = 'Enabled' }
+}
+elseif ($command.StartsWith('account show --subscription ')) {
+    $subscription = ($command -split ' ')[-1]
+    $tenant = if ($scenario -eq 'wrong-subscription-tenant' -and $subscription -eq '22222222-2222-2222-2222-222222222222') { 'tenant-b' } else { 'tenant-a' }
+    $state = if ($scenario -eq 'disabled-subscription' -and $subscription.StartsWith('2222')) { 'Disabled' } else { 'Enabled' }
+    $result = @{ tenantId = $tenant; id = $subscription; state = $state }
+}
+elseif ($command -eq 'account management-group show --name tenant-root') {
+    $result = @{ id = '/providers/Microsoft.Management/managementGroups/tenant-root' }
+}
+elseif ($command -eq 'account management-group show --name eslz-demo') {
+    $result = @{ id = $demo; details = @{ parent = @{ id = '/providers/Microsoft.Management/managementGroups/tenant-root' } } }
+}
+elseif ($command -eq 'account management-group show --name eslz-demo-landingzones') {
+    $result = @{ id = $landing; details = @{ parent = @{ id = $demo } } }
+}
+elseif ($command -eq 'account management-group show --name eslz-demo-corp') {
+    $parent = if ($scenario -eq 'wrong-ancestry') { $demo } else { $landing }
+    $result = @{ id = $workload; details = @{ parent = @{ id = $parent } } }
+}
+elseif ($command -eq 'policy set-definition show --name eslz-demo-required-rg-tags --management-group eslz-demo') {
+    if ($scenario -eq 'replacement-missing') {
+        Write-Error 'ERROR: (ResourceNotFound) replacement missing' -ErrorAction Continue
+        exit 3
+    }
+    $policyReferences = @(foreach ($reference in $references.GetEnumerator()) {
+        $referenceId = $reference.Key
+        if ($scenario -eq 'replacement-reference-missing' -and $referenceId -eq 'require-ssp-id') { continue }
+        @{
+            policyDefinitionId = if ($scenario -eq 'replacement-definition-wrong' -and $referenceId -eq 'require-owner') { "$demo/providers/Microsoft.Authorization/policyDefinitions/unrelated" } else { $builtIn }
+            definitionVersion = if ($scenario -eq 'replacement-version-missing' -and $referenceId -eq 'require-owner') { $null } elseif ($scenario -eq 'replacement-version-wrong' -and $referenceId -eq 'require-owner') { '2.*.*' } else { '1.*.*' }
+            policyDefinitionReferenceId = $referenceId
+            parameters = @{ tagName = @{ value = if ($scenario -eq 'replacement-tag-renamed' -and $referenceId -eq 'require-application-name') { 'Application' } else { $reference.Value } } }
         }
-        for reference_id, tag_name in references
-        if not (scenario == "replacement-reference-missing" and reference_id == "require-ssp-id")
-    ]
-    emit({"id": initiative, "properties": {"policyDefinitions": policy_references}})
-elif command == "policy assignment show --name demo-require-rg-tags --scope " + landing:
-    if scenario == "replacement-assignment-missing":
-        print("ERROR: (PolicyAssignmentNotFound) replacement assignment missing", file=sys.stderr)
-        sys.exit(3)
-    replacement_link = demo + "/providers/Microsoft.Authorization/policySetDefinitions/unrelated" if scenario == "replacement-link-wrong" else initiative
-    properties = {"policyDefinitionId": replacement_link}
-    if scenario == "replacement-assignment-excluded":
-        properties["notScopes"] = [workload]
-    if scenario == "replacement-assignment-selected":
-        properties["resourceSelectors"] = [{"name": "limited", "selectors": [{"kind": "resourceLocation", "in": ["eastus"]}]}]
-    emit({"id": landing + "/providers/Microsoft.Authorization/policyAssignments/demo-require-rg-tags", "properties": properties})
-elif command == "policy assignment show --name demo-require-rg-tags --scope " + workload:
-    if scenario in ("assignment-absent", "both-absent"):
-        print("ERROR: (PolicyAssignmentNotFound) legacy assignment absent", file=sys.stderr)
-        sys.exit(3)
-    if scenario == "assignment-read-error":
-        print("ERROR: (AuthorizationFailed) access denied", file=sys.stderr)
-        sys.exit(3)
-    emit({"id": workload + "/providers/Microsoft.Authorization/policyAssignments/demo-require-rg-tags", "properties": {"policyDefinitionId": demo + "/providers/Microsoft.Authorization/policyDefinitions/unrelated" if scenario == "wrong-link" else legacy_definition}})
-elif command == "policy definition show --name eslz-demo-require-workload-rg-tags --management-group eslz-demo":
-    if scenario in ("definition-absent", "both-absent"):
-        print("ERROR: (PolicyDefinitionNotFound) legacy definition absent", file=sys.stderr)
-        sys.exit(3)
-    if scenario == "definition-read-error":
-        print("ERROR: (AuthorizationFailed) access denied", file=sys.stderr)
-        sys.exit(3)
-    emit({"id": legacy_definition})
-elif " delete " in " " + command + " ":
-    pass
-else:
-    print("ERROR: unexpected command: " + command, file=sys.stderr)
-    sys.exit(4)
-'@ | Set-Content -LiteralPath $mockPython
-
-    $mockAzPath = Join-Path $MockBin 'az'
-    @"
-#!/usr/bin/env bash
-python3 '$mockPython' "`$@"
-"@ | Set-Content -LiteralPath $mockAzPath
-    if (Get-Command chmod -ErrorAction SilentlyContinue) { & chmod +x $mockAzPath }
-    $mockAzCmdPath = Join-Path $MockBin 'az.cmd'
-    @"
-@echo off
-python "$mockPython" %*
-"@ | Set-Content -LiteralPath $mockAzCmdPath
+    })
+    $result = @{ id = $initiative; properties = @{ policyDefinitions = $policyReferences } }
+}
+elseif ($command -eq "policy assignment show --name demo-require-rg-tags --scope $landing") {
+    if ($scenario -eq 'replacement-assignment-missing') {
+        Write-Error 'ERROR: (PolicyAssignmentNotFound) replacement assignment missing' -ErrorAction Continue
+        exit 3
+    }
+    $replacementLink = if ($scenario -eq 'replacement-link-wrong') { "$demo/providers/Microsoft.Authorization/policySetDefinitions/unrelated" } else { $initiative }
+    $properties = @{ policyDefinitionId = $replacementLink }
+    if ($scenario -eq 'replacement-assignment-excluded') { $properties.notScopes = @($workload) }
+    if ($scenario -eq 'replacement-assignment-selected') { $properties.resourceSelectors = @(@{ name = 'limited'; selectors = @(@{ kind = 'resourceLocation'; in = @('eastus') }) }) }
+    $result = @{ id = "$landing/providers/Microsoft.Authorization/policyAssignments/demo-require-rg-tags"; properties = $properties }
+}
+elseif ($command -eq "policy assignment show --name demo-require-rg-tags --scope $workload") {
+    if ($scenario -in 'assignment-absent', 'both-absent') {
+        Write-Error 'ERROR: (PolicyAssignmentNotFound) legacy assignment absent' -ErrorAction Continue
+        exit 3
+    }
+    if ($scenario -eq 'assignment-read-error') {
+        Write-Error 'ERROR: (AuthorizationFailed) access denied' -ErrorAction Continue
+        exit 3
+    }
+    $definitionId = if ($scenario -eq 'wrong-link') { "$demo/providers/Microsoft.Authorization/policyDefinitions/unrelated" } else { $legacyDefinition }
+    $result = @{ id = "$workload/providers/Microsoft.Authorization/policyAssignments/demo-require-rg-tags"; properties = @{ policyDefinitionId = $definitionId } }
+}
+elseif ($command -eq 'policy definition show --name eslz-demo-require-workload-rg-tags --management-group eslz-demo') {
+    if ($scenario -in 'definition-absent', 'both-absent') {
+        Write-Error 'ERROR: (PolicyDefinitionNotFound) legacy definition absent' -ErrorAction Continue
+        exit 3
+    }
+    if ($scenario -eq 'definition-read-error') {
+        Write-Error 'ERROR: (AuthorizationFailed) access denied' -ErrorAction Continue
+        exit 3
+    }
+    $result = @{ id = $legacyDefinition }
+}
+elseif (" $command " -match ' delete ') {
+    exit 0
+}
+else {
+    Write-Error "ERROR: unexpected command: $command" -ErrorAction Continue
+    exit 4
+}
+$result | ConvertTo-Json -Depth 20 -Compress
+exit 0
+'@ | Set-Content -LiteralPath $mockAzPath
 
     $wrapperScript = Join-Path $TempDir 'invoke-migration-with-mock-check.ps1'
     @'
@@ -157,6 +147,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ParameterFile,
     [Parameter(Mandatory = $true)][string]$ExpectedMockDir,
     [Parameter(Mandatory = $true)][string]$MigrationScript,
+    [AllowEmptyString()][string]$TypedConfirmation = '',
     [switch]$Execute
 )
 $azCommand = Get-Command az -ErrorAction SilentlyContinue
@@ -165,6 +156,8 @@ if (-not $resolvedSource -or -not $resolvedSource.StartsWith($ExpectedMockDir, [
     Write-Error "az resolved to '$resolvedSource' instead of the temporary mock directory '$ExpectedMockDir'."
     exit 1
 }
+$global:FixtureMigrationConfirmation = $TypedConfirmation
+function global:Read-Host { param([string]$Prompt) $global:FixtureMigrationConfirmation }
 if ($Execute) {
     & $MigrationScript -ParameterFile $ParameterFile -Execute
 } else {
@@ -188,10 +181,11 @@ if (-not $?) { exit 1 }
         $env:AZ_MOCK_SCENARIO = $Scenario
         $env:ESLZ_TAG_MIGRATION_CONFIRMATION = $Approval
         $arguments = @(
-            '-NoLogo', '-NoProfile', '-File', $wrapperScript,
+            '-NoLogo', '-NoProfile', '-NonInteractive', '-File', $wrapperScript,
             '-ParameterFile', $parameterFile,
             '-ExpectedMockDir', $MockBin,
-            '-MigrationScript', $MigrationScript
+            '-MigrationScript', $MigrationScript,
+            '-TypedConfirmation', $TypedConfirmation
         )
         if ($Execute) { $arguments += '-Execute' }
         $startInfo = [Diagnostics.ProcessStartInfo]::new()
@@ -204,7 +198,6 @@ if (-not $?) { exit 1 }
             [void]$startInfo.ArgumentList.Add($argument)
         }
         $process = [Diagnostics.Process]::Start($startInfo)
-        $process.StandardInput.WriteLine($TypedConfirmation)
         $process.StandardInput.Close()
         $standardOutput = $process.StandardOutput.ReadToEnd()
         $standardError = $process.StandardError.ReadToEnd()
@@ -224,6 +217,13 @@ if (-not $?) { exit 1 }
     Invoke-MigrationCase -Scenario present -TypedConfirmation 'tenant-a/eslz-demo-corp' -Approval '' -Execute
     if ($caseExitCode -eq 0 -or -not ($caseCalls -match 'policy definition show') -or ($caseCalls -match ' delete ')) {
         Stop-Test "PowerShell migration must complete all reads, then reject missing approval without a delete. Exit=$caseExitCode Calls=$($caseCalls -join ' | ') Output=$caseOutput"
+    }
+
+    foreach ($confirmation in @('', 'wrong-confirmation', 'TENANT-A/eslz-demo-corp')) {
+        Invoke-MigrationCase -Scenario present -TypedConfirmation $confirmation -Approval 'REMOVE-LEGACY-RG-TAG-POLICY' -Execute
+        if ($caseExitCode -eq 0 -or ($caseCalls -match ' delete ') -or $caseOutput -notmatch 'Confirmation did not match; migration cancelled\.') {
+            Stop-Test "PowerShell migration must reject an empty, incorrect, or wrong-case typed confirmation without a delete. Output=$caseOutput"
+        }
     }
 
     Invoke-MigrationCase -Scenario present -TypedConfirmation 'tenant-a/eslz-demo-corp' -Approval 'REMOVE-LEGACY-RG-TAG-POLICY' -Execute

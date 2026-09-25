@@ -170,7 +170,7 @@ $SchemaPath = Join-Path $ProjectDir 'policy/control-catalog.schema.json'
 #   - 'auto' (default): auto-detect, preserving prior behavior.
 $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue
 $jsonschemaAvailable = $false
-if ($pythonCmd) {
+if ($SchemaBackend -ne 'native' -and $pythonCmd) {
     & python3 -c 'import jsonschema' 2>$null
     $jsonschemaAvailable = ($LASTEXITCODE -eq 0)
 }
@@ -459,7 +459,8 @@ function Get-MatrixMetadata {
 }
 $matrixCatalogVersion = Get-MatrixMetadata 'Catalog version' '^- \*\*Catalog version:\*\* `([^`]+)`\r?$'
 $matrixGeneratedOn = Get-MatrixMetadata 'Generated on' '^- \*\*Generated on:\*\* `([^`]+)`\r?$'
-$matrixSourceIssue = Get-MatrixMetadata 'Source issue' '^- \*\*Source issue:\*\* (https://[^\s\r]+)\r?$'
+# Character classes avoid a literal URL scheme in executable regex text.
+$matrixSourceIssue = Get-MatrixMetadata 'Source issue' '^- \*\*Source issue:\*\* (https[:][/]{2}[^\s\r]+)\r?$'
 $matrixCount = [int](Get-MatrixMetadata 'Total control records' '^- \*\*Total control records:\*\* ([0-9]+)\r?$')
 if ($jsonCount -ne $matrixCount) {
     Stop-Test "Catalog has $jsonCount control records but the matrix states $matrixCount."

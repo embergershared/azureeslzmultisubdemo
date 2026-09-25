@@ -5,6 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir 'bicep-test-helpers.ps1')
 $ProjectDir = Split-Path -Parent $ScriptDir
 $ArtifactsParent = Join-Path $ProjectDir '.test-artifacts'
 $TempDir = Join-Path $ArtifactsParent ("initiative-ps1-" + [guid]::NewGuid().ToString('N'))
@@ -58,16 +59,18 @@ try {
     }
 
     Write-Host '1/8 Build the initiative module and compile-time example...'
-    & az bicep build --file (Join-Path $ProjectDir 'modules/policy-initiative.bicep') --outfile $ModuleJsonPath
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Initiative module Bicep build failed.' }
-    & az bicep build --file (Join-Path $ProjectDir 'examples/initiative-composition.bicep') --outfile $ExampleJsonPath
-    if ($LASTEXITCODE -ne 0) { Stop-Test 'Initiative example Bicep build failed.' }
+    Invoke-TestBicep -Operation build -File (Join-Path $ProjectDir 'modules/policy-initiative.bicep') -OutFile $ModuleJsonPath
+    Invoke-TestBicep -Operation build -File (Join-Path $ProjectDir 'examples/initiative-composition.bicep') -OutFile $ExampleJsonPath
 
     $moduleTemplate = Get-Content -LiteralPath $ModuleJsonPath -Raw | ConvertFrom-Json
     $exampleTemplate = Get-Content -LiteralPath $ExampleJsonPath -Raw | ConvertFrom-Json
 
     Write-Host '2/8 Validate the typed management-group module contract...'
-    Assert-Test ($moduleTemplate.'$schema' -eq 'https://schema.management.azure.com/schemas/2019-08-01/managementGroupDeploymentTemplate.json#') 'Initiative module must target management-group scope.'
+    # Assemble schema URLs to keep mail link protection from rewriting test literals.
+    $schemaBaseUrl = 'https://' + 'schema.management.azure.com/schemas/2019-08-01'
+    $managementGroupSchema = "$schemaBaseUrl/managementGroupDeploymentTemplate.json#"
+    $tenantSchema = "$schemaBaseUrl/tenantDeploymentTemplate.json#"
+    Assert-Test ($moduleTemplate.'$schema' -eq $managementGroupSchema) "Initiative module must target management-group scope. Expected schema '$managementGroupSchema'; actual '$($moduleTemplate.'$schema')'. Check for mixed repository versions or mail-rewritten URLs."
     Assert-Test ($moduleTemplate.languageVersion -eq '2.0') 'Initiative module must emit typed languageVersion 2.0 definitions.'
     Assert-Test ($moduleTemplate.parameters.initiativeParameters.type -eq 'object') 'initiativeParameters must be an object.'
     Assert-Test ($moduleTemplate.parameters.policyDefinitionGroups.type -eq 'array') 'policyDefinitionGroups must be a typed array.'
@@ -119,7 +122,7 @@ try {
 
     Write-Host '6/8 Validate dedicated demo-root scope, stable references, groups, and parameter mappings...'
     $exampleDeployment = $exampleTemplate.resources.organizationalAuditInitiative
-    Assert-Test ($exampleTemplate.'$schema' -eq 'https://schema.management.azure.com/schemas/2019-08-01/tenantDeploymentTemplate.json#') 'Example must be a tenant-scope composition entry point.'
+    Assert-Test ($exampleTemplate.'$schema' -eq $tenantSchema) "Example must be a tenant-scope composition entry point. Expected schema '$tenantSchema'; actual '$($exampleTemplate.'$schema')'. Check for mixed repository versions or mail-rewritten URLs."
     Assert-Test ($exampleDeployment.scope.Contains('demoRootManagementGroupId')) 'Example module scope must use the dedicated demo-root parameter.'
     $references = @($exampleDeployment.properties.parameters.policyDefinitionReferences.value)
     $groups = @($exampleDeployment.properties.parameters.policyDefinitionGroups.value)
