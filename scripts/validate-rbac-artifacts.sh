@@ -339,13 +339,16 @@ bash_create_line="$(rg -n -F 'az deployment sub create' "${owner_operator_bash}"
   || fail 'Bash Owner eligibility workflow must compile once, preview, confirm, revalidate live state, then create.'
 
 powershell_compile_line="$(rg -n -F '& az bicep build' "${owner_operator_powershell}" | head -n 1 | cut -d: -f1)"
-powershell_first_verify_line="$(rg -n '^Test-LiveEligibilityState$' "${owner_operator_powershell}" | head -n 1 | cut -d: -f1)"
-powershell_second_verify_line="$(rg -n '^Test-LiveEligibilityState$' "${owner_operator_powershell}" | tail -n 1 | cut -d: -f1)"
+# Accept the optional CR in PowerShell files while keeping numeric rg output LF-only.
+powershell_first_verify_line="$(rg -n '^Test-LiveEligibilityState\r?$' "${owner_operator_powershell}" | head -n 1 | cut -d: -f1)" \
+  || fail 'PowerShell Owner eligibility workflow is missing an exact Test-LiveEligibilityState call.'
+powershell_second_verify_line="$(rg -n '^Test-LiveEligibilityState\r?$' "${owner_operator_powershell}" | tail -n 1 | cut -d: -f1)" \
+  || fail 'PowerShell Owner eligibility workflow is missing an exact Test-LiveEligibilityState call.'
 powershell_confirmation_line="$(rg -n -F '$typedRequestId = Read-Host' "${owner_operator_powershell}" | head -n 1 | cut -d: -f1)"
 powershell_create_line="$(rg -n -F '& az deployment sub create' "${owner_operator_powershell}" | head -n 1 | cut -d: -f1)"
 [[ "$(rg -c -F -- '--template-file $script:TemplateSnapshot' "${owner_operator_powershell}")" -eq 2 ]] \
   || fail 'PowerShell Owner eligibility workflow must use the same compiled template snapshot for what-if and create.'
-[[ "$(rg -c '^Test-LiveEligibilityState$' "${owner_operator_powershell}")" -eq 2 ]] \
+[[ "$(rg -c '^Test-LiveEligibilityState\r?$' "${owner_operator_powershell}")" -eq 2 ]] \
   || fail 'PowerShell Owner eligibility workflow must perform live verification before what-if and again before create.'
 [[ "${powershell_compile_line}" -lt "${powershell_first_verify_line}" \
   && "${powershell_first_verify_line}" -lt "${powershell_what_if_line}" \
