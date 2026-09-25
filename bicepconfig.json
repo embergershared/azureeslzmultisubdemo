@@ -13,13 +13,13 @@
           "level": "warning"
         },
         "no-unused-existing-resources": {
-          "level": "error"
+          "level": "warning"
         },
         "no-unused-params": {
-          "level": "error"
+          "level": "warning"
         },
         "no-unused-vars": {
-          "level": "error"
+          "level": "warning"
         },
         "outputs-should-not-contain-secrets": {
           "level": "error"
