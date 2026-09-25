@@ -243,16 +243,46 @@ Collect IDs for:
 3. If prompted, select the correct tenant and an approved Cloud Shell storage
    option. Cloud Shell storage is not part of the Bicep deployment.
 4. Expand Cloud Shell so the what-if output is easy to review.
-5. Verify the signed-in tenant and available tools:
+5. Verify the signed-in tenant and available tools using the appropriate block
+   below. Installation commands are comments on the same line as each tool check;
+   run them separately only if the tool is missing.
+
+**Bash (Cloud Shell or local Ubuntu):**
 
 ```bash
+az version # Missing on local Ubuntu: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 az account show --output table
 az account list --all --output table
-az bicep version
-jq
-rg --version
-git --version
+az bicep version # If missing: az bicep install
+jq --version # Missing on local Ubuntu: sudo apt-get update && sudo apt-get install -y jq
+rg --version # Missing on local Ubuntu: sudo apt-get update && sudo apt-get install -y ripgrep
+git --version # Missing on local Ubuntu: sudo apt-get update && sudo apt-get install -y git
 ```
+
+**PowerShell (Cloud Shell or local Windows PowerShell 7):**
+
+```powershell
+$PSVersionTable.PSVersion # Missing PowerShell 7 on Windows: winget install --exact --id Microsoft.PowerShell
+az version # Missing on local Windows: winget install --exact --id Microsoft.AzureCLI
+az account show --output table
+az account list --all --output table
+az bicep version # If missing: az bicep install
+jq --version # Missing on local Windows: winget install --exact --id jqlang.jq
+rg --version # Missing on local Windows: winget install --exact --id BurntSushi.ripgrep.MSVC
+git --version # Missing on local Windows: winget install --exact --id Git.Git
+```
+
+Cloud Shell is a managed Linux environment, not an Ubuntu machine with `sudo`
+access. The `apt-get` commands above are for local Ubuntu only; `winget` is for
+local Windows only and is not available in Cloud Shell PowerShell. For PowerShell
+running on local Ubuntu, use the Ubuntu installation commands instead. Cloud
+Shell normally provides Azure CLI, Git, jq, ripgrep, and PowerShell; if a required
+tool is missing there, restart the session or use an approved user-local install,
+not `sudo`. `az bicep install` works in either shell. After local installations,
+open a new terminal so PATH changes take effect; run `az login` if needed.
+
+The rest of this runbook uses Bash syntax. Switch Cloud Shell back to **Bash**
+before continuing if you used PowerShell for these checks.
 
 Stop if the signed-in tenant is wrong, either sandbox subscription is missing,
 or one of the required tools is unavailable. Do not bypass the repository's
@@ -543,4 +573,3 @@ Keep the completed parameter file out of source control. When Cloud Shell uses
 ephemeral storage, close the session after collecting required evidence. When
 persistent Cloud Shell storage is used, remove or protect the local parameter
 file according to the organization's data-retention policy.
-
