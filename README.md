@@ -941,6 +941,11 @@ duplicate IDs, checks the signed-in tenant, confirms both subscriptions exist
 and are enabled, and verifies that the tenant-root management group can be read.
 What-if runs a tenant-scope preview but does not deploy.
 
+Preflight reads built-in policy and initiative versions from either flattened
+Azure CLI output or the ARM `properties` envelope, including `metadata.version`.
+A missing version is reported separately from a pinned-major mismatch; it never
+defaults to the catalog version or bypasses the version check.
+
 If preflight reports `Cannot read tenant-root management group`, use the included
 Azure CLI diagnostic and active tenant to identify the cause. Run these read-only
 checks on the machine where preflight failed:

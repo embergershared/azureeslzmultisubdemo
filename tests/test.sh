@@ -9,6 +9,7 @@ mkdir -p "${TEMP_DIR}"
 trap 'rm -rf "${TEMP_DIR}"; rmdir "${ARTIFACTS_PARENT}" 2>/dev/null || true' EXIT
 
 run_offline_parity_suite() {
+  bash "${SCRIPT_DIR}/validate-preflight-policy-version.sh"
   local mock_dir="${TEMP_DIR}/mock-az"
   mkdir -p "${mock_dir}"
   cat > "${mock_dir}/az" <<'EOF'
@@ -66,11 +67,11 @@ if [[ "${1:-}" == "policy" ]]; then
   if [[ -n "${policy_name}" ]]; then
     version="$(jq -r --arg id "${policy_name}" '.controls[] | select(.mechanism.builtIn == true and .mechanism.definitionId == $id) | ((.mechanism.majorVersion | tostring) + ".0.0")' "${PROJECT_DIR}/policy/control-catalog.json" 2>/dev/null | head -n 1)"
     if [[ -n "${version}" ]]; then
-      printf '%s\n' "${version}"
+      jq -n --arg version "${version}" '{metadata: {version: $version}}'
       exit 0
     fi
   fi
-  printf '%s\n' '1.0.0'
+  printf '%s\n' '{"metadata":{"version":"1.0.0"}}'
   exit 0
 fi
 
@@ -141,7 +142,8 @@ EOF
       cp "${base_parameters}" "${json_file}"
     fi
 
-    if PROJECT_DIR="${PROJECT_DIR}" PATH="${mock_dir}:$PATH" MOCK_REST_JSON="${rest_json}" "${PROJECT_DIR}/scripts/preflight.sh" "${json_file}" >/dev/null 2>&1; then
+    local output
+    if output="$(PROJECT_DIR="${PROJECT_DIR}" PATH="${mock_dir}:$PATH" MOCK_REST_JSON="${rest_json}" "${PROJECT_DIR}/scripts/preflight.sh" "${json_file}" 2>&1)"; then
       local actual_result='pass'
     else
       local actual_result='fail'
@@ -149,6 +151,7 @@ EOF
 
     if [[ "${actual_result}" != "${expected_result}" ]]; then
       printf 'ERROR: offline parity case %s expected %s but got %s.\n' "${name}" "${expected_result}" "${actual_result}" >&2
+      printf '%s\n' "${output}" >&2
       exit 1
     fi
   }

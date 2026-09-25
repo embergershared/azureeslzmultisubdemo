@@ -190,6 +190,42 @@ function Invoke-AzJson {
     return $result
 }
 
+function Test-BuiltInPolicyVersion {
+    param([string]$Kind, [string]$DefinitionId, [string]$MajorVersion)
+    $command = if ($Kind -eq 'policySetDefinition') { 'set-definition' } else { 'definition' }
+    $definition = Invoke-AzJson -Operation "built-in policy $DefinitionId request" -Arguments @(
+        'policy', $command, 'show', '--name', $DefinitionId, '--output', 'json'
+    )
+    if ($null -eq $definition) {
+        Stop-Preflight "Cannot read built-in policy $DefinitionId in the active Azure cloud. Review the Azure CLI diagnostic above."
+    }
+    # Support both flattened CLI output and the ARM properties envelope.
+    $actualVersion = $null
+    foreach ($fieldPath in @('version', 'properties.version', 'metadata.version', 'properties.metadata.version')) {
+        $value = $definition
+        foreach ($segment in $fieldPath.Split('.')) {
+            if ($null -eq $value -or $null -eq $value.PSObject.Properties[$segment]) {
+                $value = $null
+                break
+            }
+            $value = $value.PSObject.Properties[$segment].Value
+        }
+        if ($value -is [string] -and $value.Length -gt 0) {
+            $actualVersion = $value
+            break
+        }
+    }
+    if ($null -eq $actualVersion) {
+        Stop-Preflight "Cannot determine version for built-in policy $DefinitionId`: Azure CLI returned no non-empty version/metadata.version field (top-level or under properties)."
+    }
+    if ($actualVersion -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+        Stop-Preflight "Built-in policy $DefinitionId returned invalid version '$actualVersion'; expected major.minor.patch."
+    }
+    if ($actualVersion.Split('.')[0] -cne $MajorVersion) {
+        Stop-Preflight "Built-in policy $DefinitionId is version $actualVersion, not pinned major version $MajorVersion."
+    }
+}
+
 function Test-TenantRootAccess {
     param(
         [string]$TenantRoot,
@@ -637,17 +673,7 @@ foreach ($approvedBackupVault in $approvedBackupVaults) {
 foreach ($control in @($ProjectDir | ForEach-Object { (Get-Content -LiteralPath (Join-Path $_ 'policy/control-catalog.json') -Raw | ConvertFrom-Json).controls })) {
     $mechanism = $control.mechanism
     if ($mechanism.builtIn -ne $true -or [string]::IsNullOrWhiteSpace([string]$mechanism.definitionId) -or -not (Test-GuidShape ([string]$mechanism.definitionId))) { continue }
-    if ($mechanism.kind -eq 'policySetDefinition') {
-        $actualVersion = & az policy set-definition show --name $mechanism.definitionId --query properties.version --output tsv 2>$null
-        if ($LASTEXITCODE -ne 0) { Stop-Preflight "Cannot read built-in policy initiative $($mechanism.definitionId) in the active Azure cloud." }
-    }
-    else {
-        $actualVersion = & az policy definition show --name $mechanism.definitionId --query properties.version --output tsv 2>$null
-        if ($LASTEXITCODE -ne 0) { Stop-Preflight "Cannot read built-in policy definition $($mechanism.definitionId) in the active Azure cloud." }
-    }
-    if (-not (($actualVersion -join '').Trim().StartsWith("$($mechanism.majorVersion).", [System.StringComparison]::Ordinal))) {
-        Stop-Preflight "Built-in policy $($mechanism.definitionId) is version $($actualVersion -join ''), not pinned major version $($mechanism.majorVersion)."
-    }
+    Test-BuiltInPolicyVersion -Kind $mechanism.kind -DefinitionId $mechanism.definitionId -MajorVersion $mechanism.majorVersion
 }
 
 Write-Host ''

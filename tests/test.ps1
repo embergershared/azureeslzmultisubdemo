@@ -28,6 +28,7 @@ function Invoke-OfflineParitySuite {
     $priorLastExitCode = if (Test-Path variable:global:LASTEXITCODE) { $global:LASTEXITCODE } else { $null }
     try {
     & (Join-Path $ScriptDir 'validate-preflight-scope.ps1')
+    & (Join-Path $ScriptDir 'validate-preflight-policy-version.ps1')
     $global:OfflinePolicyVersions = @{}
     foreach ($control in @((Get-Content -LiteralPath (Join-Path $ProjectDir 'policy/control-catalog.json') -Raw | ConvertFrom-Json).controls)) {
         if ($control.mechanism.builtIn -eq $true -and $control.mechanism.definitionId) {
@@ -76,7 +77,8 @@ function Invoke-OfflineParitySuite {
             }
             'policy' {
                 $nameIndex = [array]::IndexOf($Arguments, '--name')
-                if ($nameIndex -ge 0 -and $global:OfflinePolicyVersions.ContainsKey($Arguments[$nameIndex + 1])) { $global:OfflinePolicyVersions[$Arguments[$nameIndex + 1]] } else { '1.0.0' }
+                $version = if ($nameIndex -ge 0 -and $global:OfflinePolicyVersions.ContainsKey($Arguments[$nameIndex + 1])) { $global:OfflinePolicyVersions[$Arguments[$nameIndex + 1]] } else { '1.0.0' }
+                @{ metadata = @{ version = $version } } | ConvertTo-Json -Compress
                 return
             }
             'resource' {

@@ -14,6 +14,26 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command '$1' is not installed."
 }
 
+check_policy_version() {
+  local kind="$1" definition_id="$2" major_version="$3"
+  local command='definition' definition_json actual_version
+  [[ "${kind}" != 'policySetDefinition' ]] || command='set-definition'
+  definition_json="$(az policy "${command}" show --name "${definition_id}" --output json)" \
+    || fail "Cannot read built-in policy ${definition_id} in the active Azure cloud. Review the Azure CLI diagnostic above."
+  # CLI releases expose either flattened properties or the ARM properties envelope.
+  actual_version="$(printf '%s\n' "${definition_json}" | jq -er '
+    if type != "object" then error("expected a policy definition object")
+    else [.version, .properties.version, .metadata.version, .properties.metadata.version]
+      | map(select(type == "string" and length > 0)) | .[0]
+      | select(. != null)
+    end')" \
+    || fail "Cannot determine version for built-in policy ${definition_id}: Azure CLI returned invalid JSON or no non-empty version/metadata.version field (top-level or under properties)."
+  [[ "${actual_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || fail "Built-in policy ${definition_id} returned invalid version '${actual_version}'; expected major.minor.patch."
+  [[ "${actual_version%%.*}" == "${major_version}" ]] \
+    || fail "Built-in policy ${definition_id} is version ${actual_version}, not pinned major version ${major_version}."
+}
+
 parameter_value() {
   jq -er --arg name "$1" '.parameters[$name].value' "${PARAMETER_FILE}"
 }
@@ -516,15 +536,7 @@ done < <(jq -r '.parameters.approvedBackupVaults.value[]? | [.vaultResourceId, .
 
 while IFS=$'\t' read -r kind definition_id major_version; do
   [[ -z "${definition_id}" ]] && continue
-  if [[ "${kind}" == 'policySetDefinition' ]]; then
-    actual_version="$(az policy set-definition show --name "${definition_id}" --query properties.version --output tsv 2>/dev/null)" \
-      || fail "Cannot read built-in policy initiative ${definition_id} in the active Azure cloud."
-  else
-    actual_version="$(az policy definition show --name "${definition_id}" --query properties.version --output tsv 2>/dev/null)" \
-      || fail "Cannot read built-in policy definition ${definition_id} in the active Azure cloud."
-  fi
-  [[ "${actual_version}" == "${major_version}."* ]] \
-    || fail "Built-in policy ${definition_id} is version ${actual_version}, not pinned major version ${major_version}."
+  check_policy_version "${kind}" "${definition_id}" "${major_version}"
 done < <(jq -r '.controls[] | select(.mechanism.builtIn == true and (.mechanism.definitionId | type == "string") and (.mechanism.definitionId | test("^[0-9a-fA-F-]{36}$"))) | [.mechanism.kind, .mechanism.definitionId, .mechanism.majorVersion] | @tsv' "${PROJECT_DIR}/policy/control-catalog.json")
 
 printf '\nPreflight passed.\n'

@@ -1,0 +1,17 @@
+[
+  { "name": "flattened-version", "response": "{\"version\":\"1.2.3\"}", "expected": "" },
+  { "name": "arm-version", "response": "{\"properties\":{\"version\":\"1.2.3\"}}", "expected": "" },
+  { "name": "flattened-metadata", "response": "{\"metadata\":{\"version\":\"1.2.3\"}}", "expected": "" },
+  { "name": "arm-metadata", "response": "{\"properties\":{\"metadata\":{\"version\":\"1.2.3\"}}}", "expected": "" },
+  { "name": "null-version-fallback", "response": "{\"version\":null,\"metadata\":{\"version\":\"1.2.3\"}}", "expected": "" },
+  { "name": "empty-version-fallback", "response": "{\"properties\":{\"version\":\"\",\"metadata\":{\"version\":\"1.2.3\"}}}", "expected": "" },
+  { "name": "missing-version", "response": "{}", "expected": "Cannot determine version" },
+  { "name": "null-version", "response": "{\"metadata\":{\"version\":null}}", "expected": "Cannot determine version" },
+  { "name": "numeric-version", "response": "{\"version\":1}", "expected": "Cannot determine version" },
+  { "name": "malformed-version", "response": "{\"version\":\"1.invalid\"}", "expected": "invalid version" },
+  { "name": "major-mismatch", "response": "{\"metadata\":{\"version\":\"2.0.0\"}}", "expected": "not pinned major version 1" },
+  { "name": "version-precedence", "response": "{\"version\":\"2.0.0\",\"metadata\":{\"version\":\"1.2.3\"}}", "expected": "not pinned major version 1" },
+  { "name": "invalid-json", "response": "not-json", "expected": "invalid JSON" },
+  { "name": "empty-response", "response": "", "expected": "empty" },
+  { "name": "request-failure", "response": "", "exitCode": 3, "expected": "Cannot read built-in policy" }
+]
