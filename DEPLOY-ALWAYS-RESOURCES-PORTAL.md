@@ -249,7 +249,7 @@ Collect IDs for:
 az account show --output table
 az account list --all --output table
 az bicep version
-jq --version
+jq
 rg --version
 git --version
 ```
@@ -266,7 +266,7 @@ project documentation currently uses the following upstream URL:
 ```bash
 git clone https://github.com/johnstel/azureeslzmultisubdemo.git
 cd azureeslzmultisubdemo
-git status --short
+git status
 git log -1 --oneline
 ```
 
