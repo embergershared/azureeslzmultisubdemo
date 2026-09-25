@@ -943,8 +943,11 @@ What-if runs a tenant-scope preview but does not deploy.
 
 Preflight reads built-in policy and initiative versions from either flattened
 Azure CLI output or the ARM `properties` envelope, including `metadata.version`.
-A missing version is reported separately from a pinned-major mismatch; it never
-defaults to the catalog version or bypasses the version check.
+A newer latest major does not invalidate an existing pin: preflight checks the
+advertised `versions` list for the catalog's pinned major, reading the raw ARM
+definition if the CLI omits that list. It fails if the pinned major is unavailable
+or availability cannot be verified. It never upgrades the catalog pin automatically.
+A missing version is reported separately from an unavailable pinned major.
 
 If preflight reports `Cannot read tenant-root management group`, use the included
 Azure CLI diagnostic and active tenant to identify the cause. Run these read-only

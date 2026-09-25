@@ -221,8 +221,39 @@ function Test-BuiltInPolicyVersion {
     if ($actualVersion -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
         Stop-Preflight "Built-in policy $DefinitionId returned invalid version '$actualVersion'; expected major.minor.patch."
     }
-    if ($actualVersion.Split('.')[0] -cne $MajorVersion) {
-        Stop-Preflight "Built-in policy $DefinitionId is version $actualVersion, not pinned major version $MajorVersion."
+    if ($actualVersion.Split('.')[0] -ceq $MajorVersion) { return }
+
+    $versionsProperty = $definition.PSObject.Properties['versions']
+    if (($null -eq $versionsProperty -or $null -eq $versionsProperty.Value) -and
+        $definition.PSObject.Properties['properties'] -and $null -ne $definition.properties) {
+        $versionsProperty = $definition.properties.PSObject.Properties['versions']
+    }
+    if ($null -eq $versionsProperty -or $null -eq $versionsProperty.Value) {
+        $resourceType = if ($Kind -eq 'policySetDefinition') { 'policySetDefinitions' } else { 'policyDefinitions' }
+        $definition = Invoke-AzJson -Operation "available versions for built-in policy $DefinitionId" -Arguments @(
+            'rest', '--method', 'get', '--url',
+            "/providers/Microsoft.Authorization/$resourceType/${DefinitionId}?api-version=2023-04-01", '--output', 'json'
+        )
+        if ($null -eq $definition) {
+            Stop-Preflight "Cannot read available versions for built-in policy $DefinitionId. Review the Azure CLI diagnostic above."
+        }
+        $versionsProperty = $definition.PSObject.Properties['versions']
+        if (($null -eq $versionsProperty -or $null -eq $versionsProperty.Value) -and
+            $definition.PSObject.Properties['properties'] -and $null -ne $definition.properties) {
+            $versionsProperty = $definition.properties.PSObject.Properties['versions']
+        }
+    }
+    if ($null -eq $versionsProperty -or $versionsProperty.Value -isnot [array]) {
+        Stop-Preflight "Cannot determine available versions for built-in policy $DefinitionId`: expected a versions array."
+    }
+    $availableVersions = $versionsProperty.Value
+    foreach ($version in $availableVersions) {
+        if ($version -isnot [string] -or $version -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            Stop-Preflight "Cannot determine available versions for built-in policy $DefinitionId`: expected an array of major.minor.patch strings."
+        }
+    }
+    if (-not @($availableVersions | Where-Object { $_.Split('.')[0] -ceq $MajorVersion }).Count) {
+        Stop-Preflight "Built-in policy $DefinitionId latest version is $actualVersion; pinned major version $MajorVersion is not available. Available versions: $($availableVersions -join ', ')."
     }
 }
 

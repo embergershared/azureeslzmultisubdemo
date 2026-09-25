@@ -16,8 +16,9 @@ require_command() {
 
 check_policy_version() {
   local kind="$1" definition_id="$2" major_version="$3"
-  local command='definition' definition_json actual_version
+  local command='definition' resource_type='policyDefinitions' definition_json actual_version available_versions
   [[ "${kind}" != 'policySetDefinition' ]] || command='set-definition'
+  [[ "${kind}" != 'policySetDefinition' ]] || resource_type='policySetDefinitions'
   definition_json="$(az policy "${command}" show --name "${definition_id}" --output json)" \
     || fail "Cannot read built-in policy ${definition_id} in the active Azure cloud. Review the Azure CLI diagnostic above."
   # CLI releases expose either flattened properties or the ARM properties envelope.
@@ -30,8 +31,24 @@ check_policy_version() {
     || fail "Cannot determine version for built-in policy ${definition_id}: Azure CLI returned invalid JSON or no non-empty version/metadata.version field (top-level or under properties)."
   [[ "${actual_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
     || fail "Built-in policy ${definition_id} returned invalid version '${actual_version}'; expected major.minor.patch."
-  [[ "${actual_version%%.*}" == "${major_version}" ]] \
-    || fail "Built-in policy ${definition_id} is version ${actual_version}, not pinned major version ${major_version}."
+  [[ "${actual_version%%.*}" != "${major_version}" ]] || return 0
+
+  available_versions="$(printf '%s\n' "${definition_json}" | jq -c '.versions // .properties.versions // null')" \
+    || fail "Cannot read available versions for built-in policy ${definition_id}."
+  if [[ "${available_versions}" == 'null' ]]; then
+    # Older CLI serializers can omit versions; read the unflattened ARM definition.
+    definition_json="$(az rest --method get --url "/providers/Microsoft.Authorization/${resource_type}/${definition_id}?api-version=2023-04-01" --output json)" \
+      || fail "Cannot read available versions for built-in policy ${definition_id}. Review the Azure CLI diagnostic above."
+    available_versions="$(printf '%s\n' "${definition_json}" | jq -ec '.versions // .properties.versions')" \
+      || fail "Cannot determine available versions for built-in policy ${definition_id}: the ARM response has no versions array."
+  fi
+  printf '%s\n' "${available_versions}" | jq -e '
+    if type == "array" then all(.[]; if type == "string" then test("^[0-9]+\\.[0-9]+\\.[0-9]+$") else false end)
+    else false end' >/dev/null \
+    || fail "Cannot determine available versions for built-in policy ${definition_id}: expected an array of major.minor.patch strings."
+  printf '%s\n' "${available_versions}" | jq -e --arg major "${major_version}" \
+    'any(.[]; split(".")[0] == $major)' >/dev/null \
+    || fail "Built-in policy ${definition_id} latest version is ${actual_version}; pinned major version ${major_version} is not available. Available versions: ${available_versions}."
 }
 
 parameter_value() {
