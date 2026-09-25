@@ -357,14 +357,36 @@ for critical_subscription_id in "${critical_subscription_ids[@]}"; do
   check_subscription "${critical_subscription_id}" 'critical infrastructure'
 done
 
-az account management-group show --name "${tenant_root}" --output none 2>/dev/null \
-  || fail "Cannot read tenant-root management group '${tenant_root}'. Check the ID and tenant permissions."
+if management_group_output="$(az account management-group show --name "${tenant_root}" --output none 2>&1)"; then
+  :
+else
+  management_group_exit_code=$?
+  fail "Cannot read tenant-root management group '${tenant_root}' in active tenant '${signed_in_tenant}' (Azure CLI exit code ${management_group_exit_code}).
+Azure CLI diagnostic:
+${management_group_output:-Azure CLI returned no diagnostic output.}
+Verify tenantRootManagementGroupId is the management-group ID, not its display name or a subscription ID. The tenant root group's ID equals its Microsoft Entra tenant ID.
+Check the active account with 'az account show --output json'; if the tenant is wrong, sign in with 'az login --tenant <intended-tenant-guid>' and select the intended subscription.
+For AuthorizationFailed/Forbidden, ask an authorized administrator for Microsoft.Management/managementGroups/read at the supplied management-group scope (Reader or an appropriate deployment role). Subscription Owner and Microsoft Entra Global Administrator alone do not grant access to the tenant root.
+For NotFound, verify the ID and directory in Azure portal > Management groups. For CLI, authentication, or network errors, resolve the diagnostic above before retrying.
+Preflight remains read-only; it does not create management groups, elevate access, or change role assignments."
+fi
 
 check_scope_access() {
   local scope="$1"
   local label="$2"
-  az role assignment list --scope "${scope}" --include-inherited --all --output none 2>/dev/null \
-    || fail "Cannot read effective role assignments at ${label} scope ${scope}; request Reader access before deployment."
+  local output exit_code
+  # --all conflicts with --scope; name enrichment is unnecessary for an ARM read check.
+  if output="$(az role assignment list --scope "${scope}" --include-inherited --fill-principal-name false --fill-role-definition-name false --output none 2>&1)"; then
+    return 0
+  else
+    exit_code=$?
+    fail "Cannot read effective role assignments at ${label} scope ${scope} (Azure CLI exit code ${exit_code}).
+Azure CLI diagnostic:
+${output:-Azure CLI returned no diagnostic output.}
+For AuthorizationFailed/Forbidden, request Microsoft.Authorization/roleAssignments/read at this scope (Reader or an appropriate deployment role). Subscription access does not grant access to a parent management group.
+For CLI, authentication, or network errors, resolve the diagnostic above before retrying; do not grant broader access to fix a command failure.
+Preflight remains read-only; it does not change role assignments or bypass permission checks."
+  fi
 }
 
 tenant_root_scope="/providers/Microsoft.Management/managementGroups/${tenant_root}"
