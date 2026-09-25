@@ -75,7 +75,7 @@ function Test-DefinitionBinding {
     $builtIn = Test-BuiltInDefinitionId -Value $Binding.policyDefinitionId
     return ($builtIn -or (Test-ManagementGroupDefinitionId -Value $Binding.policyDefinitionId)) -and (
         $Binding.definitionVersion -eq '' -or
-        ($builtIn -and (Test-DefinitionVersion -Value $Binding.definitionVersion))
+        (Test-DefinitionVersion -Value $Binding.definitionVersion)
     )
 }
 
@@ -213,7 +213,7 @@ try {
     foreach ($validation in @{
         validatedAssignmentName = "fail('assignmentName contains a character that is invalid"
         validatedPolicyDefinitionId = "fail('policyDefinitionId must be an exact built-in or management-group"
-        validatedDefinitionVersion = "fail('definitionVersion is supported only for built-in definitions and must use N.*.* or N.N.*"
+        validatedDefinitionVersion = "fail('definitionVersion must use N.*.* or N.N.* format for built-in or custom definitions"
         validatedNonComplianceMessages = "fail('policyDefinitionReferenceId must be non-empty"
         validatedNotScopes = "fail('notScopes must contain only valid descendant management-group"
         validatedResourceSelectors = "fail('resourceSelectors must use unique names"

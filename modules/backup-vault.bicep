@@ -121,6 +121,8 @@ var invalidVaultLocation = deployRecoveryServicesVault && (empty(requestedLocati
 // A deliberately unresolvable resource type is used as a configuration guard: it is never
 // registered as an Azure resource provider, so Azure Resource Manager rejects the deployment
 // before any metered backup resource is created, and the resource name surfaces the error.
+// Suppress only the expected missing-type diagnostic for this intentional guard.
+#disable-next-line BCP081
 resource vaultLocationGuard 'Microsoft.BackupVaultGuard/configurationError@2024-01-01' = if (invalidVaultLocation) {
   name: 'deployRecoveryServicesVault-requires-a-non-global-approved-vault-region'
 }

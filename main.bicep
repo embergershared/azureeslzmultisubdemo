@@ -361,7 +361,7 @@ var vaultDiagnosticsWorkspaceIdParts = split(vaultDiagnosticsWorkspaceIdValid ? 
 var validatedVaultDiagnosticsWorkspaceAccess = grantVaultDiagnosticsWorkspaceAccess && !enableVaultDiagnostics
   ? fail('grantVaultDiagnosticsWorkspaceAccess requires enableVaultDiagnostics to be true, because the role assignment binds the diagnostics assignment identity that only exists when vault diagnostics are assigned.')
   : grantVaultDiagnosticsWorkspaceAccess && vaultDiagnosticsEffect != 'DeployIfNotExists'
-    ? fail('grantVaultDiagnosticsWorkspaceAccess requires vaultDiagnosticsEffect to be DeployIfNotExists, because an AuditIfNotExists or Disabled assignment only reports and must never receive a managed identity or a role assignment.')
+    ? fail('grantVaultDiagnosticsWorkspaceAccess requires vaultDiagnosticsEffect to be DeployIfNotExists, because an AuditIfNotExists or Disabled assignment must never receive a remediation role assignment.')
     : grantVaultDiagnosticsWorkspaceAccess && !vaultDiagnosticsWorkspaceIdValid
       ? fail('grantVaultDiagnosticsWorkspaceAccess requires a canonical absolute effective Log Analytics workspace resource ID of the form /subscriptions/<guid>/resourceGroups/<name>/providers/Microsoft.OperationalInsights/workspaces/<name> with no surrounding whitespace, so supply existingLogAnalyticsWorkspaceResourceId or set deployCentralLogAnalytics to true.')
       : true
@@ -616,13 +616,13 @@ param resourceDiagnosticsCategoryGroup string = 'audit'
 @description('Set true only when you intentionally want policy-assignment identities to receive remediation RBAC grants for logging exports. Requires deployRoleAssignments=true.')
 param deployLoggingRemediationRoleAssignments bool = false
 
-@description('Set true to opt in to Microsoft Defender CSPM (REQ-DEF-02), including CIEM findings. Paid Defender plan with its own licensing cost. Defaults to false: effect stays Disabled and no managed identity is created. Setting true creates a SystemAssigned identity but this template never grants it a role; see modules/defender-plan-assignment.bicep and docs/CONTROL-MATRIX.md for the fail-closed, no-standing-Owner remediation workflow required before the built-in policy can actually remediate anything.')
+@description('Set true to opt in to Microsoft Defender CSPM (REQ-DEF-02), including CIEM findings. Paid Defender plan with its own licensing cost. Defaults to false: effect stays Disabled. Azure requires a SystemAssigned identity even while disabled; setting true enables the effect but this template never grants the identity a role; see modules/defender-plan-assignment.bicep and docs/CONTROL-MATRIX.md for the fail-closed, no-standing-Owner remediation workflow required before the built-in policy can actually remediate anything.')
 param enableDefenderCspm bool = false
 
 @description('Only applies when enableDefenderCspm is true. Explicit toggle for the Defender CSPM plan\'s Entra Permissions Management (CIEM) extension, called out by name in issue #20. Defaults to true, matching the built-in\'s own verified default; set false to opt the CSPM plan in without CIEM.')
 param enableDefenderCiem bool = true
 
-@description('Set true to opt in to Microsoft Defender for Servers (REQ-DEF-03) on the Landing Zones branch. Paid Defender plan with its own licensing cost. Defaults to false: effect stays Disabled and no managed identity is created. Setting true creates a SystemAssigned identity but this template never grants it a role. This assignment explicitly configures the sub-plan and agentless-scanning extension via defenderForServersSubPlan/defenderForServersAgentlessVmScanningEnabled below rather than silently inheriting the built-in\'s own defaults. See the unconditional Azure Monitor Agent audit assignments below (REQ-DEF-07/08) for a free, no-identity audit of current (non-deprecated) agent presence.')
+@description('Set true to opt in to Microsoft Defender for Servers (REQ-DEF-03) on the Landing Zones branch. Paid Defender plan with its own licensing cost. Defaults to false: effect stays Disabled. Azure requires a SystemAssigned identity even while disabled; setting true enables the effect but this template never grants the identity a role. This assignment explicitly configures the sub-plan and agentless-scanning extension via defenderForServersSubPlan/defenderForServersAgentlessVmScanningEnabled below rather than silently inheriting the built-in\'s own defaults. See the unconditional Azure Monitor Agent audit assignments below (REQ-DEF-07/08) for a free, no-identity audit of current (non-deprecated) agent presence.')
 param enableDefenderForServers bool = false
 
 @description('Only applies when enableDefenderForServers is true. Explicit Defender for Servers sub-plan choice (P1 or P2) passed to the built-in. Defaults to P2, matching the built-in\'s own verified default; P1 is the lower-cost sub-plan and does not support agentless VM scanning.')
@@ -635,7 +635,7 @@ param defenderForServersSubPlan string = 'P2'
 @description('Only applies when enableDefenderForServers is true and defenderForServersSubPlan is P2, per the built-in\'s own existence condition. Explicit toggle for the Defender for Servers plan\'s agentless VM scanning extension. Defaults to true, matching the built-in\'s own verified default.')
 param defenderForServersAgentlessVmScanningEnabled bool = true
 
-@description('Set true to opt in to Microsoft Defender for Storage (REQ-DEF-04) on the Landing Zones branch. Paid Defender plan with its own licensing cost. Defaults to false: effect stays Disabled and no managed identity is created. Setting true creates a SystemAssigned identity but this template never grants it a role.')
+@description('Set true to opt in to Microsoft Defender for Storage (REQ-DEF-04) on the Landing Zones branch. Paid Defender plan with its own licensing cost. Defaults to false: effect stays Disabled. Azure requires a SystemAssigned identity even while disabled; setting true enables the effect but this template never grants the identity a role.')
 param enableDefenderForStorage bool = false
 
 @description('Only applies when enableDefenderForStorage is true. Explicit, separate opt-in for the Defender for Storage plan\'s on-upload malware-scanning extension -- an additional metered, per-GB feature distinct from the base plan\'s own cost. Defaults to false (disabled) even though the built-in\'s own verified default is true, so enabling the Storage plan alone never silently enables this additional metered feature; a customer must separately approve it here.')
@@ -953,6 +953,7 @@ module allowedLocationsAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - allowed continental-US locations'
     description: 'Restricts regional resources to the approved continental-US list while safely allowing global resources.'
     policyDefinitionId: policyLibrary.outputs.allowedLocationsPolicyDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       allowedLocations: {
@@ -970,6 +971,7 @@ module auditPublicIpAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - audit public IP resources'
     description: 'Audits public IP address resources anywhere in the demo hierarchy.'
     policyDefinitionId: policyLibrary.outputs.auditPublicIpPolicyDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: 'Default'
     parameters: {}
   }
@@ -1024,6 +1026,7 @@ module networkIngressInitiative 'modules/policy-initiative.bicep' = {
     policyDefinitionReferences: [
       {
         policyDefinitionId: policyLibrary.outputs.publicManagementIngressPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'public-management-ingress'
         parameters: {
           effect: {
@@ -1036,6 +1039,7 @@ module networkIngressInitiative 'modules/policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: policyLibrary.outputs.requireSubnetNsgPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'require-subnet-nsg'
         parameters: {
           effect: {
@@ -1058,6 +1062,7 @@ module networkIngressAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - workload network ingress guardrails'
     description: 'Audits public management ingress and missing subnet NSGs in the selected workload branch.'
     policyDefinitionId: networkIngressInitiative.outputs.policySetDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       effect: {
@@ -1124,6 +1129,7 @@ module privateAccessInitiative 'modules/policy-initiative.bicep' = {
     policyDefinitionReferences: [
       {
         policyDefinitionId: policyLibrary.outputs.privateAccessPublicNetworkPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'paas-public-network-access'
         parameters: {
           effect: {
@@ -1171,6 +1177,7 @@ module privateAccessWorkloadAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - workload private access guardrails'
     description: 'Audits workload PaaS public access and private endpoint readiness.'
     policyDefinitionId: privateAccessInitiative.outputs.policySetDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       publicNetworkAccessEffect: {
@@ -1194,6 +1201,7 @@ module privateAccessCriticalAssignment 'modules/policy-assignment.bicep' = if (e
     displayName: 'Demo - critical private access guardrails'
     description: 'Audits critical PaaS public access and private endpoint readiness.'
     policyDefinitionId: privateAccessInitiative.outputs.policySetDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       publicNetworkAccessEffect: {
@@ -1217,13 +1225,11 @@ module firewallRouteWorkloadAssignment 'modules/policy-assignment.bicep' = if (e
     displayName: 'Demo - workload approved firewall routes'
     description: 'Audits supplied workload route-table expectations against the approved firewall private IP.'
     policyDefinitionId: policyLibrary.outputs.approvedFirewallRoutesPolicyDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: 'Default'
     parameters: {
       approvedFirewallPrivateIp: {
         value: validatedFirewallRouteInputs ? approvedFirewallPrivateIp : approvedFirewallPrivateIp
-      }
-      approvedFirewallResourceId: {
-        value: approvedFirewallResourceId
       }
       approvedRouteTableResourceIds: {
         value: approvedRouteTableResourceIds
@@ -1231,6 +1237,11 @@ module firewallRouteWorkloadAssignment 'modules/policy-assignment.bicep' = if (e
       approvedRouteTablePrefixes: {
         value: approvedRouteTablePrefixes
       }
+    }
+    metadata: {
+      category: 'Demo Landing Zone'
+      source: 'Bicep'
+      approvedFirewallResourceId: approvedFirewallResourceId
     }
   }
   dependsOn: [
@@ -1246,13 +1257,11 @@ module firewallRouteCriticalAssignment 'modules/policy-assignment.bicep' = if (e
     displayName: 'Demo - critical approved firewall routes'
     description: 'Audits supplied critical route-table expectations against the approved firewall private IP.'
     policyDefinitionId: policyLibrary.outputs.approvedFirewallRoutesPolicyDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: 'Default'
     parameters: {
       approvedFirewallPrivateIp: {
         value: validatedFirewallRouteInputs ? approvedFirewallPrivateIp : approvedFirewallPrivateIp
-      }
-      approvedFirewallResourceId: {
-        value: approvedFirewallResourceId
       }
       approvedRouteTableResourceIds: {
         value: approvedRouteTableResourceIds
@@ -1260,6 +1269,11 @@ module firewallRouteCriticalAssignment 'modules/policy-assignment.bicep' = if (e
       approvedRouteTablePrefixes: {
         value: approvedRouteTablePrefixes
       }
+    }
+    metadata: {
+      category: 'Demo Landing Zone'
+      source: 'Bicep'
+      approvedFirewallResourceId: approvedFirewallResourceId
     }
   }
   dependsOn: [
@@ -1560,6 +1574,7 @@ module dataProtectionInitiative 'modules/policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: policyLibrary.outputs.storageCmkApprovedKeyPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'storage-approved-customer-managed-key'
         parameters: {
           effect: {
@@ -1588,6 +1603,7 @@ module dataProtectionAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - storage and Key Vault data-protection guardrails'
     description: 'Audits storage and Key Vault data-protection posture, including service-specific customer-managed key requirements, across the Landing Zones branch.'
     policyDefinitionId: dataProtectionInitiative.outputs.policySetDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       effect: {
@@ -1676,6 +1692,7 @@ module expensiveResourcesAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - block common expensive resources and VM SKUs'
     description: 'Blocks selected high-cost service types and restricts VM sizes to a small demo allowlist.'
     policyDefinitionId: policyLibrary.outputs.expensiveResourcesPolicyDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {}
   }
@@ -1689,6 +1706,7 @@ module platformTagsAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - audit platform tags'
     description: 'Audits Owner and CostCenter tags on taggable resources in the Platform branch.'
     policyDefinitionId: policyLibrary.outputs.platformTagsPolicyDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: 'Default'
     parameters: {}
   }
@@ -1705,6 +1723,7 @@ module resourceGroupTagsAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - require resource group tags'
     description: 'Requires CostCenter, ApplicationName, Owner, Environment, DataClassification, and SSP-ID tags on landing-zone resource groups.'
     policyDefinitionId: resourceGroupTagsInitiative.outputs.policySetDefinitionId
+    definitionVersion: '2.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {}
     nonComplianceMessages: [
@@ -1747,7 +1766,7 @@ module resourceGroupTagsAssignment 'modules/policy-assignment.bicep' = {
 // RBAC modules never auto-grant Owner/User Access Administrator; see
 // modules/remediating-policy-assignment.bicep). modules/defender-plan-
 // assignment.bicep therefore never assigns a role to the identity it
-// creates when a plan is opted in: fail closed instead, so normal
+// creates for Azure's assignment contract: fail closed instead, so normal
 // deployment of this template -- opted in or not -- can never create or
 // leave standing Owner access anywhere. See modules/defender-plan-
 // assignment.bicep and docs/CONTROL-MATRIX.md for the fail-closed,
@@ -1763,7 +1782,7 @@ module defenderCspmAssignment 'modules/defender-plan-assignment.bicep' = {
   params: {
     assignmentName: 'demo-defender-cspm'
     displayName: 'Demo - Microsoft Defender CSPM (opt-in, paid)'
-    description: 'Microsoft Defender CSPM (REQ-DEF-02), including CIEM findings. Defaults Disabled with no managed identity; enableDefenderCspm opts in per plan. This template never grants the resulting identity any role -- remediation requires a separate, customer-run, time-bounded authorization outside this template. The plan\'s Entra Permissions Management (CIEM) extension is explicitly wired to enableDefenderCiem rather than silently inheriting the built-in\'s own default.'
+    description: 'Microsoft Defender CSPM (REQ-DEF-02), including CIEM findings. Defaults Disabled with a role-less managed identity; enableDefenderCspm opts in per plan. This template never grants the identity any role -- remediation requires separate, customer-run, time-bounded authorization outside this template. The plan\'s Entra Permissions Management (CIEM) extension is explicitly wired to enableDefenderCiem.'
     plan: 'cspm'
     enablePlan: enableDefenderCspm
     cspmEntraPermissionsManagementEnabled: enableDefenderCiem
@@ -1780,7 +1799,7 @@ module defenderForServersAssignment 'modules/defender-plan-assignment.bicep' = {
   params: {
     assignmentName: 'demo-defender-servers'
     displayName: 'Demo - Microsoft Defender for Servers (opt-in, paid)'
-    description: 'Microsoft Defender for Servers (REQ-DEF-03) on the Landing Zones branch. Defaults Disabled, no managed identity; enableDefenderForServers opts in. Never grants the resulting identity a role. Explicitly configures the sub-plan (defenderForServersSubPlan, default P2) and agentless VM scanning extension (defenderForServersAgentlessVmScanningEnabled, default true) rather than silently inheriting the built-in\'s own defaults. See REQ-DEF-07/08 for a free, no-identity audit of current agent presence.'
+    description: 'Microsoft Defender for Servers (REQ-DEF-03) on the Landing Zones branch. Defaults Disabled with a role-less managed identity; enableDefenderForServers opts in. Never grants the identity a role. Explicitly configures the sub-plan (defenderForServersSubPlan, default P2) and agentless VM scanning (defenderForServersAgentlessVmScanningEnabled, default true). See REQ-DEF-07/08 for a free, no-identity audit of current agent presence.'
     plan: 'servers'
     enablePlan: enableDefenderForServers
     serversSubPlan: defenderForServersSubPlan
@@ -1798,7 +1817,7 @@ module defenderForStorageAssignment 'modules/defender-plan-assignment.bicep' = {
   params: {
     assignmentName: 'demo-defender-storage'
     displayName: 'Demo - Microsoft Defender for Storage (opt-in, paid)'
-    description: 'Microsoft Defender for Storage (REQ-DEF-04) on the Landing Zones branch. Defaults Disabled with no managed identity; enableDefenderForStorage opts in. Never grants the resulting identity any role -- remediation requires a separate, time-bounded authorization outside this template. On-upload malware scanning, an additional metered extension, requires its own separate enableDefenderStorageMalwareScanning opt-in (default false).'
+    description: 'Microsoft Defender for Storage (REQ-DEF-04) on the Landing Zones branch. Defaults Disabled with a role-less managed identity; enableDefenderForStorage opts in. Never grants the identity any role -- remediation requires separate, time-bounded authorization outside this template. On-upload malware scanning, an additional metered extension, requires its own enableDefenderStorageMalwareScanning opt-in (default false).'
     plan: 'storage'
     enablePlan: enableDefenderForStorage
     storageOnUploadMalwareScanningEnabled: enableDefenderStorageMalwareScanning
@@ -1881,6 +1900,7 @@ module tagInheritanceAssignment 'modules/remediating-policy-assignment.bicep' = 
     displayName: 'Demo - inherit resource group tags'
     description: 'Inherits missing customer governance tags from resource groups without replacing existing resource tag values. Existing resources require a deliberate remediation task.'
     policyDefinitionId: tagInheritanceInitiative.outputs.policySetDefinitionId
+    definitionVersion: '2.*.*'
     location: deploymentLocation
     identity: {
       type: 'SystemAssigned'
@@ -2175,6 +2195,9 @@ module backupPostureInitiative 'modules/policy-initiative.bicep' = {
       }
     ]
   }
+  dependsOn: [
+    hierarchy
+  ]
 }
 
 module backupPostureAssignment 'modules/policy-assignment.bicep' = {
@@ -2185,6 +2208,7 @@ module backupPostureAssignment 'modules/policy-assignment.bicep' = {
     displayName: 'Demo - backup coverage and vault posture'
     description: 'Audits landing-zone virtual machine backup coverage and Recovery Services vault posture. This assignment never creates a vault or configures backup.'
     policyDefinitionId: backupPostureInitiative.outputs.policySetDefinitionId
+    definitionVersion: '1.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       vmBackupCoverageEffect: {
@@ -2351,10 +2375,6 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
         type: 'String'
         defaultValue: ''
       }
-      approvedFirewallResourceId: {
-        type: 'String'
-        defaultValue: ''
-      }
       approvedRouteTableResourceIds: {
         type: 'Array'
         defaultValue: []
@@ -2407,6 +2427,7 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
     policyDefinitionReferences: [
       {
         policyDefinitionId: policyLibrary.outputs.allowedLocationsPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'critical-approved-locations'
         parameters: {
           allowedLocations: {
@@ -2419,6 +2440,7 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: policyLibrary.outputs.publicManagementIngressPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'critical-public-management-ingress'
         parameters: {
           effect: {
@@ -2431,6 +2453,7 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: policyLibrary.outputs.requireSubnetNsgPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'critical-require-subnet-nsg'
         parameters: {
           effect: {
@@ -2443,6 +2466,7 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: policyLibrary.outputs.privateAccessPublicNetworkPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'critical-paas-public-network-access'
         parameters: {
           effect: {
@@ -2659,6 +2683,7 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: policyLibrary.outputs.storageCmkApprovedKeyPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'critical-storage-approved-customer-managed-key'
         parameters: {
           effect: {
@@ -2764,6 +2789,7 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: policyLibrary.outputs.approvedFirewallRoutesPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'critical-approved-firewall-routes'
         parameters: {
           effect: {
@@ -2771,9 +2797,6 @@ module nercCipTechnicalOverlayInitiative 'modules/policy-initiative.bicep' = {
           }
           approvedFirewallPrivateIp: {
             value: '[parameters(\'approvedFirewallPrivateIp\')]'
-          }
-          approvedFirewallResourceId: {
-            value: '[parameters(\'approvedFirewallResourceId\')]'
           }
           approvedRouteTableResourceIds: {
             value: '[parameters(\'approvedRouteTableResourceIds\')]'
@@ -2887,7 +2910,13 @@ module nercCipTechnicalOverlayAssignment 'modules/remediating-policy-assignment.
     assignmentName: 'demo-nerc-cip-technical'
     displayName: 'Demo - NERC CIP technical overlay (critical only)'
     description: 'Opt-in assignment of stricter technical controls for the Critical Infrastructure branch only. Assignment alone does not establish NERC CIP compliance.'
+    metadata: {
+      category: 'Regulatory Compliance'
+      source: 'azureeslzmultisubdemo'
+      approvedFirewallResourceId: approvedFirewallResourceId
+    }
     policyDefinitionId: nercCipTechnicalOverlayInitiative.outputs.policySetDefinitionId
+    definitionVersion: '1.*.*'
     location: deploymentLocation
     identity: {
       type: 'SystemAssigned'
@@ -2963,9 +2992,6 @@ module nercCipTechnicalOverlayAssignment 'modules/remediating-policy-assignment.
       }
       approvedFirewallPrivateIp: {
         value: approvedFirewallPrivateIp
-      }
-      approvedFirewallResourceId: {
-        value: approvedFirewallResourceId
       }
       approvedRouteTableResourceIds: {
         value: approvedRouteTableResourceIds
@@ -3177,19 +3203,25 @@ module vmBackupConfigurationAssignments 'modules/remediating-policy-assignment.b
   }
 ]
 
-// The vault diagnostics control keeps least privilege by effect: an AuditIfNotExists or Disabled
-// assignment only reports, so it is created without a managed identity and without any role
-// assignment. Only the explicit DeployIfNotExists effect uses the remediating assignment that
-// attaches an identity and grants Log Analytics Contributor.
-module vaultDiagnosticsAuditAssignment 'modules/policy-assignment.bicep' = if (vaultDiagnosticsAuditActive) {
+// Deployment-capable definitions require an identity even for audit/disabled effects.
+// No remediation roles are granted until the separate DINE/RBAC opt-ins are enabled.
+module vaultDiagnosticsAuditAssignment 'modules/remediating-policy-assignment.bicep' = if (vaultDiagnosticsAuditActive) {
   name: 'assign-vault-diagnostics-audit'
   scope: managementGroup(landingZonesManagementGroupId)
   params: {
     assignmentName: 'demo-vault-diagnostics'
     displayName: 'Demo - Recovery Services vault diagnostics'
-    description: 'Reports Recovery Services vaults without diagnostic settings that send logs to the effective central Log Analytics workspace. This assignment has no identity and deploys nothing.'
+    description: 'Reports Recovery Services vaults without diagnostic settings that send logs to the effective central Log Analytics workspace. Its required identity has no remediation roles and the assignment deploys nothing.'
     policyDefinitionId: resourceDiagnosticsToLogAnalyticsPolicySetDefinitionId
     definitionVersion: '1.*.*'
+    location: deploymentLocation
+    identity: {
+      type: 'SystemAssigned'
+    }
+    verifiedRoleDefinitionIds: [
+      logAnalyticsContributorRoleDefinitionId
+    ]
+    deployRemediationRoleAssignments: false
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       effect: {
@@ -3287,7 +3319,7 @@ module customerOwnedBackupVault 'modules/backup-vault.bicep' = if (customerOwned
   ]
 }
 
-module activityLogExportAssignment 'modules/policy-assignment.bicep' = if (!activityLogRemediationDeployRequested) {
+module activityLogExportAssignment 'modules/remediating-policy-assignment.bicep' = if (!activityLogRemediationDeployRequested) {
   name: 'assign-activity-logs'
   scope: managementGroup(demoRootManagementGroupId)
   params: {
@@ -3296,6 +3328,15 @@ module activityLogExportAssignment 'modules/policy-assignment.bicep' = if (!acti
     description: 'Configures subscription Activity Log diagnostic settings to stream to the effective central Log Analytics workspace.'
     policyDefinitionId: activityLogExportPolicyDefinitionId
     definitionVersion: '1.*.*'
+    location: deploymentLocation
+    identity: {
+      type: 'SystemAssigned'
+    }
+    verifiedRoleDefinitionIds: [
+      monitoringContributorRoleDefinitionId
+      logAnalyticsContributorRoleDefinitionId
+    ]
+    deployRemediationRoleAssignments: false
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       effect: {
@@ -3360,7 +3401,7 @@ module activityLogExportRemediatingAssignment 'modules/remediating-policy-assign
   ]
 }
 
-module resourceDiagnosticsAssignment 'modules/policy-assignment.bicep' = if (!resourceDiagnosticsRemediationDeployRequested) {
+module resourceDiagnosticsAssignment 'modules/remediating-policy-assignment.bicep' = if (!resourceDiagnosticsRemediationDeployRequested) {
   name: 'assign-resource-diagnostics'
   scope: managementGroup(demoRootManagementGroupId)
   params: {
@@ -3369,6 +3410,14 @@ module resourceDiagnosticsAssignment 'modules/policy-assignment.bicep' = if (!re
     description: 'Assigns the built-in supported-resource diagnostics initiative to stream logs to the effective central Log Analytics workspace.'
     policyDefinitionId: resourceDiagnosticsPolicySetDefinitionId
     definitionVersion: '1.*.*'
+    location: deploymentLocation
+    identity: {
+      type: 'SystemAssigned'
+    }
+    verifiedRoleDefinitionIds: [
+      logAnalyticsContributorRoleDefinitionId
+    ]
+    deployRemediationRoleAssignments: false
     enforcementMode: denyPolicyEnforcementMode
     parameters: {
       effect: {
@@ -3600,7 +3649,7 @@ output centralMonitoringSentinelEnabled bool = centralMonitoring.outputs.sentine
 output loggingAssignments object = {
   activityLogExport: {
     policyAssignmentId: activityLogRemediationDeployRequested ? activityLogExportRemediatingAssignment!.outputs.policyAssignmentId : activityLogExportAssignment!.outputs.policyAssignmentId
-    identityPrincipalId: activityLogRemediationDeployRequested ? activityLogExportRemediatingAssignment!.outputs.identityPrincipalId : ''
+    identityPrincipalId: activityLogRemediationDeployRequested ? activityLogExportRemediatingAssignment!.outputs.identityPrincipalId : activityLogExportAssignment!.outputs.identityPrincipalId
     roleAssignmentIds: activityLogRemediationDeployRequested ? activityLogExportRemediatingAssignment!.outputs.roleAssignmentIds : []
     remediationRoleAssignmentIds: activityLogRemediationDeployRequested ? activityLogExportRemediatingAssignment!.outputs.roleAssignmentIds : []
     workspaceDestinationRoleAssignmentIds: deployActivityLogRemediationRoleAssignments ? activityLogWorkspaceDestinationRbac!.outputs.roleAssignmentIds : []
@@ -3608,7 +3657,7 @@ output loggingAssignments object = {
   }
   resourceDiagnostics: {
     policyAssignmentId: resourceDiagnosticsRemediationDeployRequested ? resourceDiagnosticsRemediatingAssignment!.outputs.policyAssignmentId : resourceDiagnosticsAssignment!.outputs.policyAssignmentId
-    identityPrincipalId: resourceDiagnosticsRemediationDeployRequested ? resourceDiagnosticsRemediatingAssignment!.outputs.identityPrincipalId : ''
+    identityPrincipalId: resourceDiagnosticsRemediationDeployRequested ? resourceDiagnosticsRemediatingAssignment!.outputs.identityPrincipalId : resourceDiagnosticsAssignment!.outputs.identityPrincipalId
     roleAssignmentIds: resourceDiagnosticsRemediationDeployRequested ? resourceDiagnosticsRemediatingAssignment!.outputs.roleAssignmentIds : []
     remediationRoleAssignmentIds: resourceDiagnosticsRemediationDeployRequested ? resourceDiagnosticsRemediatingAssignment!.outputs.roleAssignmentIds : []
     workspaceDestinationRoleAssignmentIds: deployResourceDiagnosticsRemediationRoleAssignments ? resourceDiagnosticsWorkspaceDestinationRbac!.outputs.roleAssignmentIds : []
@@ -3685,7 +3734,7 @@ output backupRemediation object = {
   vaultDiagnosticsAssignmentId: vaultDiagnosticsRemediationActive
     ? vaultDiagnosticsAssignment!.outputs.policyAssignmentId
     : vaultDiagnosticsAuditActive ? vaultDiagnosticsAuditAssignment!.outputs.policyAssignmentId : ''
-  vaultDiagnosticsIdentityAttached: vaultDiagnosticsRemediationActive
+  vaultDiagnosticsIdentityAttached: vaultDiagnosticsActive
   vaultDiagnosticsRoleDefinitionIds: vaultDiagnosticsRemediationActive
     ? [
         logAnalyticsContributorRoleDefinitionId
@@ -3693,7 +3742,7 @@ output backupRemediation object = {
     : []
   vaultDiagnosticsEnforcementMode: denyPolicyEnforcementMode
   vaultDiagnosticsAutomaticSettingsOnResourceWrite: vaultDiagnosticsRemediationActive && denyPolicyEnforcementMode == 'Default'
-  vaultDiagnosticsPrincipalId: vaultDiagnosticsRemediationActive ? vaultDiagnosticsAssignment!.outputs.identityPrincipalId : ''
+  vaultDiagnosticsPrincipalId: vaultDiagnosticsRemediationActive ? vaultDiagnosticsAssignment!.outputs.identityPrincipalId : vaultDiagnosticsAuditActive ? vaultDiagnosticsAuditAssignment!.outputs.identityPrincipalId : ''
   vaultDiagnosticsWorkspaceResourceId: vaultDiagnosticsActive ? vaultDiagnosticsWorkspaceResourceId : ''
   vaultDiagnosticsWorkspaceAccessGranted: vaultDiagnosticsWorkspaceAccessActive
   vaultDiagnosticsWorkspaceRoleAssignmentIds: vaultDiagnosticsWorkspaceAccessActive

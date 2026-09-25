@@ -194,9 +194,9 @@ var definitionVersionParts = concat(rawDefinitionVersionParts, [
   ''
 ])
 var hasValidDefinitionVersionFormat = length(rawDefinitionVersionParts) == 3 && isVersionNumber(definitionVersionParts[0]) && definitionVersionParts[2] == '*' && (definitionVersionParts[1] == '*' || isVersionNumber(definitionVersionParts[1]))
-var validatedDefinitionVersion = empty(definitionVersion) || (isBuiltInDefinitionId && hasValidDefinitionVersionFormat)
+var validatedDefinitionVersion = empty(definitionVersion) || hasValidDefinitionVersionFormat
   ? definitionVersion
-  : fail('definitionVersion is supported only for built-in definitions and must use N.*.* or N.N.* format.')
+  : fail('definitionVersion must use N.*.* or N.N.* format for built-in or custom definitions.')
 
 var validatedLocation = !empty(trim(location)) && toLower(trim(location)) != 'global'
   ? trim(location)

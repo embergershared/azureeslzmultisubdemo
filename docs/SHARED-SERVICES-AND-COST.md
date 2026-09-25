@@ -109,13 +109,12 @@ Three paid plans are exposed, each behind its own explicit, safe-by-default
 opt-in: `enableDefenderCspm`, `enableDefenderForServers`, and
 `enableDefenderForStorage`.
 
-While a parameter stays `false`, the corresponding assignment creates **no
-managed identity at all** (`identity.type` is `None`) and its effect is
-`Disabled`. A normal deployment therefore cannot enable a paid plan, incur
-license cost, or create a standing identity.
+While a parameter stays `false`, the assignment has a required **role-less
+system-assigned identity** and its effect is `Disabled`. The identity does not
+enable a paid plan, incur plan license cost, or grant standing access.
 
-Setting one to `true` flips that plan's identity to `SystemAssigned` and its
-effect to `DeployIfNotExists` — and still grants that identity **no role**.
+Setting one to `true` flips its effect to `DeployIfNotExists` — and still grants
+that identity **no role**.
 These built-ins only support remediation via Owner at subscription scope, and
 this project deliberately refuses to grant Owner or User Access Administrator
 to any managed identity. Opting in therefore fails closed: the identity exists

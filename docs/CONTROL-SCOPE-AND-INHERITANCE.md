@@ -105,7 +105,7 @@ never blocks or remediates.
 | `Demo - Microsoft cloud security benchmark` | MCSB compliance signal | Enabled, `DoNotEnforce` |
 | `Demo - CIS Microsoft Azure Foundations Benchmark v2.0.0` | Optional overlay | Opt-in, `DoNotEnforce` |
 | `Demo - NIST SP 800-53 Rev. 5` | Optional overlay | Opt-in, `DoNotEnforce` |
-| `Demo - Microsoft Defender CSPM (opt-in, paid)` | Paid CSPM/CIEM plan | Opt-in, effect `Disabled`, no identity |
+| `Demo - Microsoft Defender CSPM (opt-in, paid)` | Paid CSPM/CIEM plan | Opt-in, effect `Disabled`, role-less managed identity |
 | `Demo - export Activity Logs to Log Analytics` | Subscription Activity Log export | Effect `Disabled` |
 | `Demo - export supported resource diagnostics` | Resource diagnostic export | Effect `Disabled` |
 
@@ -138,8 +138,8 @@ a workload-oriented control.
 | `Demo - audit VM vulnerability assessment` | Free audit signal | Audit, always assigned |
 | `Demo - audit Windows Azure Monitor Agent presence` | Free audit signal | Audit, always assigned |
 | `Demo - audit Linux Azure Monitor Agent presence` | Free audit signal | Audit, always assigned |
-| `Demo - Microsoft Defender for Servers (opt-in, paid)` | Paid plan | Opt-in, effect `Disabled`, no identity |
-| `Demo - Microsoft Defender for Storage (opt-in, paid)` | Paid plan | Opt-in, effect `Disabled`, no identity |
+| `Demo - Microsoft Defender for Servers (opt-in, paid)` | Paid plan | Opt-in, effect `Disabled`, role-less managed identity |
+| `Demo - Microsoft Defender for Storage (opt-in, paid)` | Paid plan | Opt-in, effect `Disabled`, role-less managed identity |
 
 Landing Zones is the correct scope for a control that must cover **all**
 workloads, ordinary and critical, without touching Platform or Connectivity.

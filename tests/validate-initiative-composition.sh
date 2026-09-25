@@ -62,15 +62,16 @@ jq -e '
   .resources.initiative.properties.parameters == "[parameters(\u0027initiativeParameters\u0027)]" and
   .resources.initiative.properties.policyDefinitionGroups == "[parameters(\u0027policyDefinitionGroups\u0027)]" and
   .resources.initiative.properties.version == "[parameters(\u0027initiativeVersion\u0027)]" and
+  .resources.initiative.properties.versions == ["[parameters(\u0027initiativeVersion\u0027)]"] and
   .resources.initiative.properties.metadata.category == "[parameters(\u0027initiativeCategory\u0027)]" and
   .resources.initiative.properties.metadata.version == "[parameters(\u0027initiativeVersion\u0027)]" and
   .resources.initiative.properties.metadata.governanceVersion == "2.0" and
   .resources.initiative.properties.metadata.managedBy == "Bicep" and
-  .resources.initiative.properties.copy[0].name == "policyDefinitions" and
-  (.resources.initiative.properties.copy[0].input | contains("validatedPolicyDefinitionReferences")) and
-  (.resources.initiative.properties.copy[0].input | contains("'definitionVersion'")) and
-  (.resources.initiative.properties.copy[0].input | contains("'parameters'")) and
-  (.resources.initiative.properties.copy[0].input | contains("'groupNames'"))
+  (.resources.initiative.properties | has("copy") | not) and
+  (.resources.initiative.properties.policyDefinitions | startswith("[map(variables(\u0027validatedPolicyDefinitionReferences\u0027), lambda(")) and
+  (.resources.initiative.properties.policyDefinitions | contains("'definitionVersion'")) and
+  (.resources.initiative.properties.policyDefinitions | contains("'parameters'")) and
+  (.resources.initiative.properties.policyDefinitions | contains("'groupNames'"))
 ' "${MODULE_JSON}" >/dev/null
 
 printf '4/8 Validate empty and duplicate reference-ID guards...\n'

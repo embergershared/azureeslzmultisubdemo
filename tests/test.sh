@@ -9,6 +9,7 @@ mkdir -p "${TEMP_DIR}"
 trap 'rm -rf "${TEMP_DIR}"; rmdir "${ARTIFACTS_PARENT}" 2>/dev/null || true' EXIT
 
 run_offline_parity_suite() {
+  bash "${SCRIPT_DIR}/validate-deploy-workflow.sh"
   bash "${SCRIPT_DIR}/validate-preflight-policy-version.sh"
   local mock_dir="${TEMP_DIR}/mock-az"
   mkdir -p "${mock_dir}"
@@ -639,8 +640,8 @@ done
 
 printf '2/31 Build the complete tenant template and validate policy assignment shapes...\n'
 az_build_stderr="$(az bicep build --file "${PROJECT_DIR}/main.bicep" --outfile "${TEMP_DIR}/main.json" 2>&1 1>/dev/null)"
-if printf '%s' "${az_build_stderr}" | rg -q 'BCP318'; then
-  printf 'ERROR: main.bicep build must not emit a BCP318 nullable-module-output warning.\n' >&2
+if printf '%s' "${az_build_stderr}" | rg -q 'BCP318|BCP081|use-recent-api-versions'; then
+  printf 'ERROR: main.bicep build must not emit nullable-module-output, missing-type, or outdated-API warnings.\n' >&2
   printf '%s\n' "${az_build_stderr}" >&2
   exit 1
 fi
@@ -648,6 +649,7 @@ az bicep build \
   --file "${PROJECT_DIR}/identity/azure-rbac/owner-eligibility-request.bicep" \
   --outfile "${TEMP_DIR}/owner-eligibility-request.json" >/dev/null
 COMPILED_MAIN_TEMPLATE="${TEMP_DIR}/main.json" "${SCRIPT_DIR}/validate-policy-assignment.sh"
+python3 "${SCRIPT_DIR}/validate-deployment-contracts.py" "${TEMP_DIR}/main.json"
 printf '    Confirm the exact six-tag initiative and compliant evidence resource groups...\n'
 jq -e '
   def deployment($name):
@@ -1396,11 +1398,13 @@ rg -q 'DELETE-ESLZ-DEMO' "${PROJECT_DIR}/scripts/teardown.sh"
 rg -q 'DEPLOY-ESLZ-DEMO' "${PROJECT_DIR}/scripts/deploy.ps1"
 rg -q 'DELETE-ESLZ-DEMO' "${PROJECT_DIR}/scripts/teardown.ps1"
 for deployment_script in "${PROJECT_DIR}/scripts/deploy.sh" "${PROJECT_DIR}/scripts/deploy.ps1"; do
-  preflight_line="$(rg -n 'preflight\.(sh|ps1)' "${deployment_script}" | head -1 | cut -d: -f1)"
+  preview_script="${PROJECT_DIR}/scripts/what-if.${deployment_script##*.}"
+  preflight_line="$(rg -n 'preflight\.(sh|ps1)' "${preview_script}" | head -1 | cut -d: -f1)"
+  preview_line="$(rg -n 'az deployment tenant what-if' "${preview_script}" | head -1 | cut -d: -f1)"
   what_if_line="$(rg -n 'what-if\.(sh|ps1)' "${deployment_script}" | head -1 | cut -d: -f1)"
   confirmation_line="$(rg -n 'DEPLOY-ESLZ-DEMO' "${deployment_script}" | head -1 | cut -d: -f1)"
-  [[ -n "${preflight_line}" && -n "${what_if_line}" && -n "${confirmation_line}" &&
-    "${preflight_line}" -lt "${confirmation_line}" && "${what_if_line}" -lt "${confirmation_line}" ]] || {
+  [[ -n "${preflight_line}" && -n "${preview_line}" && -n "${what_if_line}" && -n "${confirmation_line}" &&
+    "${preflight_line}" -lt "${preview_line}" && "${what_if_line}" -lt "${confirmation_line}" ]] || {
     printf 'ERROR: %s must run preflight and tenant what-if before the deployment confirmation gate.\n' "${deployment_script}" >&2
     exit 1
   }
@@ -1478,7 +1482,7 @@ private_access_and_route_guardrail_count="$(jq '
   ($critical.scope | contains("criticalInfrastructureManagementGroupId")) and
   $routes.condition == "[parameters(\u0027enableFirewallRouteGuardrails\u0027)]" and
   ($routes.scope | contains("workloadManagementGroupId")) and
-  $routes.properties.parameters.parameters.value.approvedFirewallResourceId.value == "[parameters(\u0027approvedFirewallResourceId\u0027)]" and
+  $routes.properties.parameters.metadata.value.approvedFirewallResourceId == "[parameters(\u0027approvedFirewallResourceId\u0027)]" and
   (.variables.validatedFirewallRouteInputs | contains("fail(")) and
   (.variables.validatedFirewallRouteInputs | contains("approvedFirewallResourceId")) and
   (.variables.validatedFirewallRouteInputs | contains("approvedRouteTableResourceIds")) and
@@ -1827,7 +1831,7 @@ jq -e '
   .parameters.enableDefenderForStorage.value == false
 ' "${TEMP_DIR}/main.parameters.json" >/dev/null
 rg -q "^param plan .cspm. \| .servers. \| .storage.$" "${PROJECT_DIR}/modules/defender-plan-assignment.bicep"
-rg -q "type: enablePlan \\? 'SystemAssigned' : 'None'" "${PROJECT_DIR}/modules/defender-plan-assignment.bicep"
+rg -q "type: 'SystemAssigned'" "${PROJECT_DIR}/modules/defender-plan-assignment.bicep"
 rg -q "value: enablePlan \\? 'DeployIfNotExists' : 'Disabled'" "${PROJECT_DIR}/modules/defender-plan-assignment.bicep"
 ! rg -q "roleDefinitionId" "${PROJECT_DIR}/modules/defender-plan-assignment.bicep" || {
   printf 'ERROR: modules/defender-plan-assignment.bicep must never reference a roleDefinitionId; it must never auto-grant a role.\n' >&2
@@ -1937,7 +1941,7 @@ printf '%s' "${storage_deployment}" | jq -e '
 # module source text still looks correct.
 for defender_deployment_var in cspm_deployment servers_deployment storage_deployment; do
   printf '%s' "${!defender_deployment_var}" | jq -e '
-    .properties.template.resources.assignment.identity.type == "[if(parameters(\u0027enablePlan\u0027), \u0027SystemAssigned\u0027, \u0027None\u0027)]" and
+    .properties.template.resources.assignment.identity.type == "SystemAssigned" and
     .properties.template.resources.assignment.properties.policyDefinitionId == "[variables(\u0027policyDefinitionId\u0027)]" and
     .properties.template.resources.assignment.properties.definitionVersion == "[variables(\u0027selectedPlan\u0027).definitionVersion]" and
     .properties.template.resources.assignment.properties.parameters == "[union(createObject(\u0027effect\u0027, createObject(\u0027value\u0027, if(parameters(\u0027enablePlan\u0027), \u0027DeployIfNotExists\u0027, \u0027Disabled\u0027))), variables(\u0027planParameters\u0027)[parameters(\u0027plan\u0027)])]"
@@ -2893,14 +2897,10 @@ jq -e --slurpfile catalog "${control_catalog}" '
   assigned_at_demo_root($diagnostics) and assigned_at_demo_root($diagnostics_remediating) and
   all(($activity, $activity_remediating, $diagnostics, $diagnostics_remediating);
     .properties.parameters.enforcementMode.value == "[parameters(\u0027denyPolicyEnforcementMode\u0027)]") and
-  ($activity.properties.parameters | has("location") | not) and
-  ($activity.properties.parameters | has("identity") | not) and
-  ($activity.properties.parameters | has("verifiedRoleDefinitionIds") | not) and
-  ($activity.properties.parameters | has("deployRemediationRoleAssignments") | not) and
-  ($diagnostics.properties.parameters | has("location") | not) and
-  ($diagnostics.properties.parameters | has("identity") | not) and
-  ($diagnostics.properties.parameters | has("verifiedRoleDefinitionIds") | not) and
-  ($diagnostics.properties.parameters | has("deployRemediationRoleAssignments") | not) and
+  all(($activity, $diagnostics);
+    .properties.parameters.location.value == "[parameters(\u0027deploymentLocation\u0027)]" and
+    .properties.parameters.identity.value == {type: "SystemAssigned"} and
+    .properties.parameters.deployRemediationRoleAssignments.value == false) and
   all(($activity_remediating, $diagnostics_remediating);
     .properties.parameters.location.value == "[parameters(\u0027deploymentLocation\u0027)]" and
     .properties.parameters.identity.value == {type: "SystemAssigned"}) and
@@ -3003,7 +3003,7 @@ jq -e --slurpfile catalog "${control_catalog}" '
   .outputs.loggingAssignments.value.activityLogExport.policyAssignmentId ==
     "[if(variables(\u0027activityLogRemediationDeployRequested\u0027), reference(\u0027activityLogExportRemediatingAssignment\u0027).outputs.policyAssignmentId.value, reference(\u0027activityLogExportAssignment\u0027).outputs.policyAssignmentId.value)]" and
   .outputs.loggingAssignments.value.activityLogExport.identityPrincipalId ==
-    "[if(variables(\u0027activityLogRemediationDeployRequested\u0027), reference(\u0027activityLogExportRemediatingAssignment\u0027).outputs.identityPrincipalId.value, \u0027\u0027)]" and
+    "[if(variables(\u0027activityLogRemediationDeployRequested\u0027), reference(\u0027activityLogExportRemediatingAssignment\u0027).outputs.identityPrincipalId.value, reference(\u0027activityLogExportAssignment\u0027).outputs.identityPrincipalId.value)]" and
   .outputs.loggingAssignments.value.activityLogExport.roleAssignmentIds ==
     "[if(variables(\u0027activityLogRemediationDeployRequested\u0027), reference(\u0027activityLogExportRemediatingAssignment\u0027).outputs.roleAssignmentIds.value, createArray())]" and
   .outputs.loggingAssignments.value.activityLogExport.remediationRoleAssignmentIds ==
@@ -3013,7 +3013,7 @@ jq -e --slurpfile catalog "${control_catalog}" '
   .outputs.loggingAssignments.value.resourceDiagnostics.policyAssignmentId ==
     "[if(variables(\u0027resourceDiagnosticsRemediationDeployRequested\u0027), reference(\u0027resourceDiagnosticsRemediatingAssignment\u0027).outputs.policyAssignmentId.value, reference(\u0027resourceDiagnosticsAssignment\u0027).outputs.policyAssignmentId.value)]" and
   .outputs.loggingAssignments.value.resourceDiagnostics.identityPrincipalId ==
-    "[if(variables(\u0027resourceDiagnosticsRemediationDeployRequested\u0027), reference(\u0027resourceDiagnosticsRemediatingAssignment\u0027).outputs.identityPrincipalId.value, \u0027\u0027)]" and
+    "[if(variables(\u0027resourceDiagnosticsRemediationDeployRequested\u0027), reference(\u0027resourceDiagnosticsRemediatingAssignment\u0027).outputs.identityPrincipalId.value, reference(\u0027resourceDiagnosticsAssignment\u0027).outputs.identityPrincipalId.value)]" and
   .outputs.loggingAssignments.value.resourceDiagnostics.roleAssignmentIds ==
     "[if(variables(\u0027resourceDiagnosticsRemediationDeployRequested\u0027), reference(\u0027resourceDiagnosticsRemediatingAssignment\u0027).outputs.roleAssignmentIds.value, createArray())]" and
   .outputs.loggingAssignments.value.resourceDiagnostics.remediationRoleAssignmentIds ==
@@ -3381,8 +3381,7 @@ while IFS= read -r builtin_id; do
 done <<< "${data_protection_builtin_ids}"
 
 # Every built-in member must be pinned to the exact major version verified in
-# the control catalog, and the in-repository custom member must stay unpinned
-# because definitionVersion applies only to built-in definitions.
+# the control catalog; the custom member pins its declared major version.
 data_protection_reference_pins="$(jq -r '
   .resources[]
   | select(.name == "data-protection-initiative")
@@ -3396,8 +3395,8 @@ data_protection_reference_pins="$(jq -r '
 ' "${TEMP_DIR}/main.json")"
 while IFS="$(printf '\t')" read -r reference_id builtin_id pinned_version; do
   if [[ "${builtin_id}" == 'custom' ]]; then
-    [[ -z "${pinned_version}" ]] || {
-      printf 'ERROR: Custom data-protection reference %s must not declare definitionVersion.\n' "${reference_id}" >&2
+    [[ "${pinned_version}" == "1.*.*" ]] || {
+      printf 'ERROR: Custom data-protection reference %s must pin its declared major version 1.*.*.\n' "${reference_id}" >&2
       exit 1
     }
     continue
@@ -3434,10 +3433,10 @@ jq -e '
     "key-vault-network-access": "3.*.*",
     "key-vault-diagnostics-readiness": "5.*.*",
     "storage-customer-managed-key": "1.*.*",
-    "storage-approved-customer-managed-key": null
+    "storage-approved-customer-managed-key": "1.*.*"
   }
 ' "${TEMP_DIR}/main.json" >/dev/null || {
-  printf 'ERROR: Data-protection references must pin the exact verified built-in majors and leave the custom member unpinned.\n' >&2
+  printf 'ERROR: Data-protection references must pin the exact verified built-in majors and pin the custom member to its declared major.\n' >&2
   exit 1
 }
 
@@ -3632,10 +3631,10 @@ jq -e --slurpfile catalog "${control_catalog}" '
   $diagnostics.condition == "[variables(\u0027vaultDiagnosticsRemediationActive\u0027)]" and
   $diagnosticsAudit.condition == "[variables(\u0027vaultDiagnosticsAuditActive\u0027)]" and
   ($diagnosticsAudit.scope | contains("landingZonesManagementGroupId")) and
-  ($diagnosticsAudit.properties.parameters | has("identity") | not) and
-  ($diagnosticsAudit.properties.parameters | has("verifiedRoleDefinitionIds") | not) and
+  $diagnosticsAudit.properties.parameters.identity.value == {type: "SystemAssigned"} and
+  $diagnosticsAudit.properties.parameters.deployRemediationRoleAssignments.value == false and
   ([$diagnosticsAudit.properties.template.resources[]
-    | select(has("identity"))] | length) == 0 and
+    | select(has("identity"))] | length) == 1 and
   ([$diagnosticsAudit.properties.template.resources[]
     | select(.type? == "Microsoft.Authorization/roleAssignments")] | length) == 0 and
   $diagnosticsAudit.properties.parameters.definitionVersion.value == pinned_version("REQ-BKP-07") and
@@ -3689,7 +3688,7 @@ jq -e --slurpfile catalog "${control_catalog}" '
   (.outputs.backupRemediation.value.vaultDiagnosticsWorkspaceRoleAssignmentIds
     | contains("roleAssignmentIds")) and
   (.outputs.backupRemediation.value.vaultDiagnosticsIdentityAttached
-    | contains("vaultDiagnosticsRemediationActive")) and
+    | contains("vaultDiagnosticsActive")) and
   (.outputs.backupRemediation.value.vaultDiagnosticsRoleDefinitionIds
     | contains("vaultDiagnosticsRemediationActive")) and
   (.variables.validatedVaultDiagnosticsWorkspaceAccess

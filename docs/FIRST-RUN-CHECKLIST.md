@@ -167,7 +167,7 @@ macOS or Linux:
       resource.
 - [ ] What-if shows no Log Analytics workspace, Sentinel onboarding, Defender
       plan, Recovery Services vault, or protected backup item.
-- [ ] What-if shows no managed identity for a Defender plan assignment.
+- [ ] What-if shows required system-assigned identities for Defender and logging assignments, but no remediation role grants with default settings.
 - [ ] What-if shows no `<namePrefix>-criticalinfra` management group unless you
       deliberately enabled it.
 - [ ] An Azure administrator reviewed the preview.

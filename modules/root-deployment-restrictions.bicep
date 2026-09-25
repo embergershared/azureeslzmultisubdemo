@@ -42,7 +42,7 @@ var managedDisksPolicyDefinitionId = tenantResourceId(
 )
 
 module initiative 'policy-initiative.bicep' = {
-  name: 'root-deployment-restrictions'
+  name: 'root-deployment-restrictions-initiative'
   params: {
     initiativeName: '${namePrefix}-deploy-restrictions'
     initiativeDisplayName: 'Demo - root deployment restrictions'
@@ -84,6 +84,7 @@ module initiative 'policy-initiative.bicep' = {
     policyDefinitionReferences: [
       {
         policyDefinitionId: allowedLocationsPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'allowed-locations'
         parameters: {
           listOfAllowedLocations: {
@@ -99,6 +100,7 @@ module initiative 'policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: allowedResourceTypesPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'allowed-resource-types'
         parameters: {
           allowedResourceTypes: {
@@ -111,6 +113,7 @@ module initiative 'policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: allowedVmSkusPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'allowed-vm-skus'
         parameters: {
           listOfAllowedSKUs: {
@@ -123,6 +126,7 @@ module initiative 'policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: managedDisksPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'audit-managed-disks'
         parameters: {}
         groupNames: [
@@ -131,6 +135,7 @@ module initiative 'policy-initiative.bicep' = {
       }
       {
         policyDefinitionId: auditPublicIpPolicyDefinitionId
+        definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'audit-public-ip'
         parameters: {}
         groupNames: [
@@ -148,6 +153,7 @@ module assignment 'policy-assignment.bicep' = {
     displayName: 'Demo - root deployment restrictions'
     description: 'Applies audit-first customer deployment restrictions throughout both subscription branches under the dedicated demo root.'
     policyDefinitionId: initiative.outputs.policySetDefinitionId
+    definitionVersion: '2.*.*'
     enforcementMode: enforcementMode
     parameters: {
       allowedLocations: {

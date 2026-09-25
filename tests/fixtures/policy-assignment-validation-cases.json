@@ -116,6 +116,21 @@
     {
       "policyDefinitionId": "/providers/Microsoft.Management/managementGroups/demo-root/providers/Microsoft.Authorization/policyDefinitions/custom-policy",
       "definitionVersion": "1.*.*",
+      "valid": true
+    },
+    {
+      "policyDefinitionId": "/providers/Microsoft.Management/managementGroups/demo-root/providers/Microsoft.Authorization/policySetDefinitions/custom-initiative",
+      "definitionVersion": "2.1.*",
+      "valid": true
+    },
+    {
+      "policyDefinitionId": "/providers/Microsoft.Management/managementGroups/demo-root/providers/Microsoft.Authorization/policyDefinitions/custom-policy",
+      "definitionVersion": "1.2.3",
+      "valid": false
+    },
+    {
+      "policyDefinitionId": "/providers/Microsoft.Management/managementGroups/demo-root/providers/Microsoft.Authorization/policySetDefinitions/custom-initiative",
+      "definitionVersion": "banana",
       "valid": false
     }
   ],

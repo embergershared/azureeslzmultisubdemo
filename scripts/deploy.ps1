@@ -13,10 +13,6 @@ if ([string]::IsNullOrWhiteSpace($ParameterFile)) {
     $ParameterFile = Join-Path $ProjectDir 'parameters/demo.parameters.json'
 }
 
-& (Join-Path $ScriptDir 'preflight.ps1') -ParameterFile $ParameterFile
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
 & (Join-Path $ScriptDir 'what-if.ps1') -ParameterFile $ParameterFile
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE

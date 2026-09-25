@@ -11,11 +11,10 @@ targetScope = 'managementGroup'
 // access anywhere:
 //
 // - When `enablePlan` is false (the safe default), the assignment's
-//   `effect` is `Disabled` and its `identity.type` is `None`: no managed
-//   identity is created at all, so there is nothing to grant a role to.
-// - When `enablePlan` is true, `effect` becomes `DeployIfNotExists` and a
-//   `SystemAssigned` identity is created (required by Azure Policy for any
-//   DeployIfNotExists assignment), but this module still never assigns a
+//   `effect` is `Disabled`. Azure requires a SystemAssigned identity even
+//   when a deployment-capable definition is disabled; it receives no roles.
+// - When `enablePlan` is true, `effect` becomes `DeployIfNotExists`, but this
+//   module still never assigns a
 //   role to it. This repository's shared RBAC module also deliberately
 //   refuses to grant Owner or User Access Administrator to any identity
 //   (see modules/remediating-policy-assignment.bicep) -- a single
@@ -124,7 +123,7 @@ param description string
 @sys.description('Which verified Microsoft Defender for Cloud plan this assignment tracks. Restricted to the plans this module has independently verified against the control catalog (policy/control-catalog.json); no other policyDefinitionId can be supplied.')
 param plan 'cspm' | 'servers' | 'storage'
 
-@sys.description('Explicit, independent opt-in for this paid plan. Defaults to false (effect stays Disabled, no managed identity is created). Setting true switches effect to DeployIfNotExists and creates a SystemAssigned identity, but this module never grants that identity any role.')
+@sys.description('Explicit, independent opt-in for this paid plan. Defaults to false (effect stays Disabled). A SystemAssigned identity is required by the deployment-capable definition in either mode, but this module never grants it any role.')
 param enablePlan bool = false
 
 @sys.description('CSPM plan only. Enables the built-in\'s sensitive-data-discovery extension. Defaults to true, matching the built-in\'s own verified default (ASC_Azure_Defender_CSPM_Full_Features_DINE.json).')
@@ -164,7 +163,7 @@ param storageCapGBPerMonthPerStorageAccount int = 10000
 @sys.description('Storage plan only. Enables the built-in\'s sensitive-data-discovery extension. Defaults to true, matching the built-in\'s own verified default.')
 param storageSensitiveDataDiscoveryEnabled bool = true
 
-@sys.description('Non-global Azure region used to store the policy assignment and its managed identity when enablePlan is true.')
+@sys.description('Non-global Azure region used to store the policy assignment and its required managed identity.')
 @minLength(1)
 param location string
 
@@ -259,7 +258,7 @@ resource assignment 'Microsoft.Authorization/policyAssignments@2025-03-01' = {
   name: validatedAssignmentName
   location: validatedLocation
   identity: {
-    type: enablePlan ? 'SystemAssigned' : 'None'
+    type: 'SystemAssigned'
   }
   properties: {
     displayName: displayName
@@ -280,4 +279,4 @@ resource assignment 'Microsoft.Authorization/policyAssignments@2025-03-01' = {
 }
 
 output policyAssignmentId string = assignment.id
-output identityPrincipalId string = enablePlan ? assignment.identity.principalId : ''
+output identityPrincipalId string = assignment.identity.principalId

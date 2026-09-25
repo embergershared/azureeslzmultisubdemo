@@ -7,7 +7,7 @@ resource existingWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02-01'
   name: workspaceName
 }
 
-resource sentinelOnboarding 'Microsoft.SecurityInsights/onboardingStates@2024-09-01' = {
+resource sentinelOnboarding 'Microsoft.SecurityInsights/onboardingStates@2025-09-01' = {
   scope: existingWorkspace
   name: 'default'
   properties: {}

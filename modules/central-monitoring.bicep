@@ -42,6 +42,7 @@ param tags object
 // it is never registered as an Azure resource provider, so Azure Resource Manager
 // rejects the deployment before any billable resource is created, and the resource
 // name below surfaces the specific configuration error in the deployment failure.
+// Suppress BCP081 only on these intentional guards; other diagnostics remain enabled.
 var newWorkspaceRequested = deployCentralLogAnalytics
 var existingWorkspaceSupplied = !empty(existingLogAnalyticsWorkspaceResourceId)
 var conflictingMonitoringInputs = newWorkspaceRequested && existingWorkspaceSupplied
@@ -51,10 +52,12 @@ var createNewWorkspace = newWorkspaceRequested && !hasMonitoringConfigurationErr
 var useExistingWorkspace = existingWorkspaceSupplied && !hasMonitoringConfigurationError
 var resourceGroupName = 'rg-${namePrefix}-monitoring'
 
+#disable-next-line BCP081
 resource conflictingMonitoringInputsGuard 'Microsoft.CentralMonitoringGuard/configurationError@2024-01-01' = if (conflictingMonitoringInputs) {
   name: 'deployCentralLogAnalytics-and-existingLogAnalyticsWorkspaceResourceId-are-mutually-exclusive-set-only-one'
 }
 
+#disable-next-line BCP081
 resource sentinelRequiresWorkspaceGuard 'Microsoft.CentralMonitoringGuard/configurationError@2024-01-01' = if (sentinelRequiresEffectiveWorkspace) {
   name: 'deploySentinel-requires-deployCentralLogAnalytics-true-or-a-non-empty-existingLogAnalyticsWorkspaceResourceId'
 }

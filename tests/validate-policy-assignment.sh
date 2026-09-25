@@ -120,7 +120,7 @@ jq -e '
     .policyDefinitionId as $definition_id
     | ($definition_id | built_in_definition_id) as $built_in
     | (($built_in or ($definition_id | management_group_definition_id))
-      and (.definitionVersion == "" or ($built_in and (.definitionVersion | valid_definition_version))));
+      and (.definitionVersion == "" or (.definitionVersion | valid_definition_version)));
   def valid_resource_id_segments:
     startswith("/")
       and (endswith("/") | not)
@@ -301,7 +301,7 @@ jq -e '
   | first($root.resources[] | select(.type == "Microsoft.Resources/deployments" and .name == "root-deployment-restrictions")) as $rootRestrictions
   | first($root.resources[] | select(.type == "Microsoft.Resources/deployments" and (.name | contains("policy-library")))) as $policyLibrary
   | first($policyLibrary.properties.template.resources[] | select(.properties.displayName? == "Demo - allowed resource types (all resources)")) as $allowedResourceTypesPolicy
-  | first($rootRestrictions.properties.template.resources[] | select(.name == "root-deployment-restrictions")) as $initiative
+  | first($rootRestrictions.properties.template.resources[] | select(.name == "root-deployment-restrictions-initiative")) as $initiative
   | first($rootRestrictions.properties.template.resources[] | select(.name == "assign-root-deployment-restrictions")) as $assignment
   | $initiative.properties.parameters.policyDefinitionReferences.value as $references
   | $assignment.properties.parameters.nonComplianceMessages.value as $messages
@@ -325,6 +325,7 @@ jq -e '
       "audit-managed-disks",
       "audit-public-ip"
     ]
+    and all($references[]; .definitionVersion == "1.*.*")
     and $references[0].parameters.listOfAllowedLocations.value == "[[parameters(\u0027allowedLocations\u0027)]"
     and $references[0].parameters.effect.value == "Deny"
     and $references[1].policyDefinitionId == "[parameters(\u0027allowedResourceTypesPolicyDefinitionId\u0027)]"
@@ -435,7 +436,7 @@ jq -e '
     and $module.definitions.ResourceSelector.properties.selectors.maxLength == 10
     and ($module.variables.validatedAssignmentName | contains("fail(\u0027assignmentName contains a character that is invalid"))
     and ($module.variables.validatedPolicyDefinitionId | contains("fail(\u0027policyDefinitionId must be an exact built-in or management-group"))
-    and ($module.variables.validatedDefinitionVersion | contains("fail(\u0027definitionVersion is supported only for built-in definitions and must use N.*.* or N.N.*"))
+    and ($module.variables.validatedDefinitionVersion | contains("fail(\u0027definitionVersion must use N.*.* or N.N.* format for built-in or custom definitions"))
     and ($module.variables.validatedNonComplianceMessages | contains("fail(\u0027policyDefinitionReferenceId must be non-empty"))
     and ($module.variables.validatedNotScopes | contains("fail(\u0027notScopes must contain only valid descendant management-group"))
     and ($module.variables.validatedResourceSelectors | contains("fail(\u0027resourceSelectors must use unique names"))

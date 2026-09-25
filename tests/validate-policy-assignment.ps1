@@ -104,7 +104,7 @@ function Test-DefinitionBinding {
     $supportedId = $builtIn -or (Test-ManagementGroupDefinitionId -Value $Binding.policyDefinitionId)
     return $supportedId -and (
         $Binding.definitionVersion -eq '' -or
-        ($builtIn -and (Test-DefinitionVersion -Value $Binding.definitionVersion))
+        (Test-DefinitionVersion -Value $Binding.definitionVersion)
     )
 }
 
@@ -574,7 +574,7 @@ try {
         Stop-Test 'Customer location defaults must remain separate from the existing safe demo profile.'
     }
     $restrictionDeployments = @(Get-TemplateResources -Resources $rootRestrictions.properties.template.resources)
-    $restrictionInitiative = @($restrictionDeployments | Where-Object name -eq 'root-deployment-restrictions')
+    $restrictionInitiative = @($restrictionDeployments | Where-Object name -eq 'root-deployment-restrictions-initiative')
     $restrictionAssignment = @($restrictionDeployments | Where-Object name -eq 'assign-root-deployment-restrictions')
     if ($restrictionInitiative.Count -ne 1 -or $restrictionAssignment.Count -ne 1) {
         Stop-Test 'Root deployment-restrictions must compose one initiative and one assignment.'
@@ -582,6 +582,11 @@ try {
     $references = @($restrictionInitiative[0].properties.parameters.policyDefinitionReferences.value)
     $expectedReferenceIds = @('allowed-locations', 'allowed-resource-types', 'allowed-vm-skus', 'audit-managed-disks', 'audit-public-ip')
     Assert-ExactNames -Actual @($references.policyDefinitionReferenceId) -Expected $expectedReferenceIds -Message 'Root deployment-restrictions policy references changed.'
+    foreach ($reference in $references) {
+        if ($reference.definitionVersion -ne '1.*.*') {
+            Stop-Test "Root deployment-restrictions member $($reference.policyDefinitionReferenceId) must pin its verified major version."
+        }
+    }
     $policyLibrary = @($mainJson.resources | Where-Object {
         $_.type -eq 'Microsoft.Resources/deployments' -and $_.name.Contains('policy-library')
     })
@@ -731,7 +736,7 @@ try {
     foreach ($validation in @{
         validatedAssignmentName = "fail('assignmentName contains a character that is invalid"
         validatedPolicyDefinitionId = "fail('policyDefinitionId must be an exact built-in or management-group"
-        validatedDefinitionVersion = "fail('definitionVersion is supported only for built-in definitions and must use N.*.* or N.N.*"
+        validatedDefinitionVersion = "fail('definitionVersion must use N.*.* or N.N.* format for built-in or custom definitions"
         validatedNonComplianceMessages = "fail('policyDefinitionReferenceId must be non-empty"
         validatedNotScopes = "fail('notScopes must contain only valid descendant management-group"
         validatedResourceSelectors = "fail('resourceSelectors must use unique names"

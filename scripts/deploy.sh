@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PARAMETER_FILE="${1:-${PROJECT_DIR}/parameters/demo.parameters.json}"
 
-"${SCRIPT_DIR}/preflight.sh" "${PARAMETER_FILE}"
 "${SCRIPT_DIR}/what-if.sh" "${PARAMETER_FILE}"
 
 if [[ "${ESLZ_DEPLOY_CONFIRMATION:-}" != 'DEPLOY-ESLZ-DEMO' ]]; then

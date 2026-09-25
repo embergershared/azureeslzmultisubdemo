@@ -94,7 +94,7 @@ These are all off, audit-only, or non-enforcing by default:
 - Microsoft cloud security benchmark (on by default, `DoNotEnforce`), with
   optional CIS and NIST SP 800-53 Rev. 5 overlays.
 - Defender for Cloud plan governance markers, all paid plans disabled by
-  default with no identity.
+  default with a required role-less managed identity.
 - The opt-in NERC CIP technical overlay at Critical Infrastructure only.
 - Governed, expiring policy exemptions via `policyExemptions`.
 - Report-only Conditional Access and PIM artifacts, the eligible-Owner

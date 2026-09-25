@@ -30,6 +30,10 @@ resource allowedLocations 'Microsoft.Authorization/policyDefinitions@2025-03-01'
     displayName: 'Demo - allowed continental-US Azure locations'
     description: 'Restricts taggable regional resources to a clear continental-US allowlist, while allowing global resources and excluding B2C directories.'
     mode: 'Indexed'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Demo Landing Zone'
       version: '1.0.0'
@@ -73,6 +77,10 @@ resource allowedResourceTypesAll 'Microsoft.Authorization/policyDefinitions@2025
     displayName: 'Demo - allowed resource types (all resources)'
     description: 'Restricts every resource to a change-controlled type allowlist, including child and locationless resources.'
     mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Demo Landing Zone'
       version: '1.0.0'
@@ -104,6 +112,10 @@ resource auditPublicIp 'Microsoft.Authorization/policyDefinitions@2025-03-01' = 
     displayName: 'Demo - audit public IP address resources'
     description: 'Audits the creation of Microsoft.Network/publicIPAddresses as a simple public-exposure signal.'
     mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Network'
       version: '1.0.0'
@@ -126,6 +138,10 @@ resource publicManagementIngress 'Microsoft.Authorization/policyDefinitions@2025
     displayName: 'Demo - block public RDP and SSH NSG rules'
     description: 'Audits or denies inbound NSG rules that allow TCP RDP or SSH from any public IPv4 host, CIDR, Internet, or wildcard source.'
     mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Network'
       version: '1.0.0'
@@ -182,7 +198,7 @@ resource publicManagementIngress 'Microsoft.Authorization/policyDefinitions@2025
                   {
                     allOf: [
                       {
-                        value: '[if(or(empty(field(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix\')), greaterOrEquals(first(field(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix\')), \'A\')), false, ipRangeContains(\'0.0.0.0/0\', field(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix\')))]'
+                        value: '[if(or(empty(field(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix\')), greaterOrEquals(first(field(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix\')), \'A\')), false(), ipRangeContains(\'0.0.0.0/0\', field(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefix\')))]'
                         equals: true
                       }
                       {
@@ -214,7 +230,7 @@ resource publicManagementIngress 'Microsoft.Authorization/policyDefinitions@2025
                           {
                             allOf: [
                               {
-                                value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefixes[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefixes[*]\')), \'A\')), false, ipRangeContains(\'0.0.0.0/0\', current(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefixes[*]\')))]'
+                                value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefixes[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefixes[*]\')), \'A\')), false(), ipRangeContains(\'0.0.0.0/0\', current(\'Microsoft.Network/networkSecurityGroups/securityRules/sourceAddressPrefixes[*]\')))]'
                                 equals: true
                               }
                               {
@@ -244,14 +260,14 @@ resource publicManagementIngress 'Microsoft.Authorization/policyDefinitions@2025
                   where: {
                     anyOf: [
                       {
-                        value: '[if(or(empty(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\')), greaterOrEquals(first(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\')), \'A\')), false, if(equals(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\'), \'*\'), true, and(lessOrEquals(int(first(split(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\'), \'-\'))), int(current(\'managementPort\')))))))]'
+                        value: '[if(or(empty(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\')), greaterOrEquals(first(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\')), \'A\')), false(), if(equals(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\'), \'*\'), true(), and(lessOrEquals(int(first(split(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(field(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRange\'), \'-\'))), int(current(\'managementPort\'))))))]'
                         equals: true
                       }
                       {
                         count: {
                           field: 'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]'
                           where: {
-                            value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\')), \'A\')), false, if(equals(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\'), \'*\'), true, and(lessOrEquals(int(first(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\')))))))]'
+                            value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\')), \'A\')), false(), if(equals(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\'), \'*\'), true(), and(lessOrEquals(int(first(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules/destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\'))))))]'
                             equals: true
                           }
                         }
@@ -303,7 +319,7 @@ resource publicManagementIngress 'Microsoft.Authorization/policyDefinitions@2025
                           {
                             allOf: [
                               {
-                                value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefix\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefix\')), \'A\')), false, ipRangeContains(\'0.0.0.0/0\', current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefix\')))]'
+                                value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefix\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefix\')), \'A\')), false(), ipRangeContains(\'0.0.0.0/0\', current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefix\')))]'
                                 equals: true
                               }
                               {
@@ -335,7 +351,7 @@ resource publicManagementIngress 'Microsoft.Authorization/policyDefinitions@2025
                                   {
                                     allOf: [
                                       {
-                                        value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefixes[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefixes[*]\')), \'A\')), false, ipRangeContains(\'0.0.0.0/0\', current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefixes[*]\')))]'
+                                        value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefixes[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefixes[*]\')), \'A\')), false(), ipRangeContains(\'0.0.0.0/0\', current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].sourceAddressPrefixes[*]\')))]'
                                         equals: true
                                       }
                                       {
@@ -365,14 +381,14 @@ resource publicManagementIngress 'Microsoft.Authorization/policyDefinitions@2025
                           where: {
                             anyOf: [
                               {
-                                value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\')), \'A\')), false, if(equals(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\'), \'*\'), true, and(lessOrEquals(int(first(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\'), \'-\'))), int(current(\'managementPort\')))))))]'
+                                value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\')), \'A\')), false(), if(equals(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\'), \'*\'), true(), and(lessOrEquals(int(first(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRange\'), \'-\'))), int(current(\'managementPort\'))))))]'
                                 equals: true
                               }
                               {
                                 count: {
                                   field: 'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]'
                                   where: {
-                                    value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\')), \'A\')), false, if(equals(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\'), \'*\'), true, and(lessOrEquals(int(first(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\')))))))]'
+                                    value: '[if(or(empty(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\')), greaterOrEquals(first(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\')), \'A\')), false(), if(equals(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\'), \'*\'), true(), and(lessOrEquals(int(first(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\'))), greaterOrEquals(int(last(split(current(\'Microsoft.Network/networkSecurityGroups/securityRules[*].destinationPortRanges[*]\'), \'-\'))), int(current(\'managementPort\'))))))]'
                                     equals: true
                                   }
                                 }
@@ -405,6 +421,10 @@ resource requireSubnetNsg 'Microsoft.Authorization/policyDefinitions@2025-03-01'
     displayName: 'Demo - require NSGs on workload subnets'
     description: 'Audits or denies workload subnets that do not have a network security group association.'
     mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Network'
       version: '1.0.0'
@@ -472,6 +492,10 @@ resource privateAccessPublicNetwork 'Microsoft.Authorization/policyDefinitions@2
     displayName: 'Demo - audit selected PaaS public network access'
     description: 'Audits selected PaaS services that permit public network access. Deny is an explicit later-enforcement option.'
     mode: 'Indexed'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Network'
       version: '1.0.0'
@@ -552,21 +576,30 @@ resource approvedFirewallRoutes 'Microsoft.Authorization/policyDefinitions@2025-
     displayName: 'Demo - audit approved firewall route expectations'
     description: 'Audits specified route tables when expected prefixes do not use the supplied approved virtual-appliance private IP.'
     mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Network'
       version: '1.0.0'
     }
     parameters: {
+      effect: {
+        type: 'String'
+        defaultValue: 'Audit'
+        allowedValues: [
+          'Audit'
+          'Disabled'
+        ]
+        metadata: {
+          displayName: 'Effect'
+        }
+      }
       approvedFirewallPrivateIp: {
         type: 'String'
         metadata: {
           displayName: 'Approved firewall private IP'
-        }
-      }
-      approvedFirewallResourceId: {
-        type: 'String'
-        metadata: {
-          displayName: 'Approved firewall resource ID'
         }
       }
       approvedRouteTableResourceIds: {
@@ -625,7 +658,7 @@ resource approvedFirewallRoutes 'Microsoft.Authorization/policyDefinitions@2025-
         ]
       }
       then: {
-        effect: 'audit'
+        effect: '[parameters(\'effect\')]'
       }
     }
   }
@@ -637,6 +670,10 @@ resource expensiveResources 'Microsoft.Authorization/policyDefinitions@2025-03-0
     displayName: 'Demo - block common expensive resources and VM SKUs'
     description: 'Blocks selected commonly expensive always-on service types and denies virtual machine SKUs outside a small demo allowlist.'
     mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Cost'
       version: '1.0.0'
@@ -690,6 +727,10 @@ resource storageCmkApprovedKey 'Microsoft.Authorization/policyDefinitions@2025-0
     displayName: 'Demo - audit storage customer-managed keys against approved Key Vaults and keys'
     description: 'Audits storage accounts encrypted with a customer-managed key whose Key Vault URI or key name is outside the customer-approved lists. Each list is only evaluated when it is non-empty, so the safe default reports nothing and no key, vault, or identity is created.'
     mode: 'Indexed'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Storage'
       version: '1.0.0'
@@ -779,6 +820,10 @@ resource platformTags 'Microsoft.Authorization/policyDefinitions@2025-03-01' = {
     displayName: 'Demo - audit Owner and CostCenter tags'
     description: 'Audits taggable Platform resources that are missing Owner or CostCenter.'
     mode: 'Indexed'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
     metadata: {
       category: 'Tags'
       version: '1.0.0'

@@ -17,6 +17,7 @@ New-Item -ItemType Directory -Path $ArtifactsParent -Force | Out-Null
 New-Item -ItemType Directory -Path $TempDir | Out-Null
 
 function Invoke-OfflineParitySuite {
+    & (Join-Path $ScriptDir 'validate-deploy-workflow.ps1')
     $mockDir = Join-Path $TempDir 'mock-az'
     New-Item -ItemType Directory -Path $mockDir -Force | Out-Null
     $priorAz = if (Test-Path function:az) { ${function:az} } else { $null }
@@ -714,8 +715,8 @@ try {
     Write-Host '2/31 Build the complete tenant template and validate policy assignment shapes...'
     $compiledTemplate = Join-Path $TempDir 'main.json'
     $buildOutput = Invoke-TestBicep -Operation build -File (Join-Path $ProjectDir 'main.bicep') -OutFile $compiledTemplate -PassThru
-    if ($buildOutput -match 'BCP318') {
-        Stop-Test 'main.bicep build must not emit a BCP318 nullable-module-output warning.'
+    if ($buildOutput -match 'BCP318|BCP081|use-recent-api-versions') {
+        Stop-Test 'main.bicep build must not emit nullable-module-output, missing-type, or outdated-API warnings.'
     }
     $compiledEligibilityTemplate = Join-Path $TempDir 'owner-eligibility-request.json'
     Invoke-TestBicep -Operation build `
@@ -1659,11 +1660,14 @@ exit $LASTEXITCODE
     }
     foreach ($deploymentScript in @('scripts/deploy.sh', 'scripts/deploy.ps1')) {
         $lines = Get-Content -LiteralPath (Join-Path $ProjectDir $deploymentScript)
-        $preflightLine = (($lines | Select-String -Pattern 'preflight\.(sh|ps1)' | Select-Object -First 1).LineNumber)
+        $previewScript = Join-Path $ScriptDir ("..\scripts\what-if" + [IO.Path]::GetExtension($deploymentScript))
+        $previewLines = Get-Content -LiteralPath $previewScript
+        $preflightLine = (($previewLines | Select-String -Pattern 'preflight\.(sh|ps1)' | Select-Object -First 1).LineNumber)
+        $previewLine = (($previewLines | Select-String -Pattern 'az deployment tenant what-if' | Select-Object -First 1).LineNumber)
         $whatIfLine = (($lines | Select-String -Pattern 'what-if\.(sh|ps1)' | Select-Object -First 1).LineNumber)
         $confirmationLine = (($lines | Select-String -Pattern 'DEPLOY-ESLZ-DEMO' | Select-Object -First 1).LineNumber)
-        if ($null -eq $preflightLine -or $null -eq $whatIfLine -or $null -eq $confirmationLine -or
-            $preflightLine -ge $confirmationLine -or $whatIfLine -ge $confirmationLine) {
+        if ($null -eq $preflightLine -or $null -eq $previewLine -or $null -eq $whatIfLine -or $null -eq $confirmationLine -or
+            $preflightLine -ge $previewLine -or $whatIfLine -ge $confirmationLine) {
             Stop-Test "$deploymentScript must run preflight and tenant what-if before the deployment confirmation gate."
         }
     }
@@ -1856,8 +1860,7 @@ exit $LASTEXITCODE
         $firewallRouteWorkloadAssignment[0].scope -notmatch 'workloadManagementGroupId') {
         Stop-Test 'Private-access and firewall-route assignments must remain workload/critical scoped and opt-in.'
     }
-    $routeParameters = $firewallRouteWorkloadAssignment[0].properties.parameters.parameters.value
-    if ([string]$routeParameters.approvedFirewallResourceId.value -ne "[parameters('approvedFirewallResourceId')]" -or
+    if ([string]$firewallRouteWorkloadAssignment[0].properties.parameters.metadata.value.approvedFirewallResourceId -ne "[parameters('approvedFirewallResourceId')]" -or
         ([string]$compiledJson.variables.validatedFirewallRouteInputs) -notmatch 'fail\(' -or
         ([string]$compiledJson.variables.validatedFirewallRouteInputs) -notmatch 'approvedRouteTablePrefixes') {
         Stop-Test 'Firewall-route assignment must retain approved-firewall evidence and validate all architecture inputs.'
@@ -2200,8 +2203,8 @@ exit $LASTEXITCODE
     if ($defenderPlanBicepText -notmatch "(?m)^param plan 'cspm' \| 'servers' \| 'storage'\r?$") {
         Stop-Test 'defender-plan-assignment.bicep must restrict plan to the cspm/servers/storage enum.'
     }
-    if ($defenderPlanBicepText -notmatch "type: enablePlan \? 'SystemAssigned' : 'None'") {
-        Stop-Test 'defender-plan-assignment.bicep must toggle identity.type between SystemAssigned and None based on enablePlan.'
+    if ($defenderPlanBicepText -notmatch "type: 'SystemAssigned'") {
+        Stop-Test 'defender-plan-assignment.bicep must include the required SystemAssigned identity even when the effect is Disabled.'
     }
     if ($defenderPlanBicepText -notmatch "value: enablePlan \? 'DeployIfNotExists' : 'Disabled'") {
         Stop-Test 'defender-plan-assignment.bicep must toggle effect between DeployIfNotExists and Disabled based on enablePlan.'
@@ -2314,7 +2317,7 @@ exit $LASTEXITCODE
     # module's source text) for every one of the three plan deployments, so a
     # regression in any single plan's compiled shape is caught even if the
     # module source text still looks correct.
-    $expectedIdentityTypeExpr = "[if(parameters('enablePlan'), 'SystemAssigned', 'None')]"
+    $expectedIdentityTypeExpr = 'SystemAssigned'
     $expectedPolicyDefinitionIdExpr = "[variables('policyDefinitionId')]"
     $expectedDefinitionVersionExpr = "[variables('selectedPlan').definitionVersion]"
     $expectedParametersExpr = "[union(createObject('effect', createObject('value', if(parameters('enablePlan'), 'DeployIfNotExists', 'Disabled'))), variables('planParameters')[parameters('plan')])]"
@@ -3622,17 +3625,14 @@ function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
         $activityRemediatingDeployment.condition -ne "[variables('activityLogRemediationDeployRequested')]" -or
         $diagnosticsDeployment.condition -ne "[not(variables('resourceDiagnosticsRemediationDeployRequested'))]" -or
         $diagnosticsRemediatingDeployment.condition -ne "[variables('resourceDiagnosticsRemediationDeployRequested')]") {
-        Stop-Test 'Logging assignment deployments must switch between identity-free and remediating forms based on effect.'
+        Stop-Test 'Logging assignment deployments must switch between role-less and remediating forms based on effect.'
     }
-    if ($activityDeployment.properties.parameters.PSObject.Properties['location'] -or
-        $activityDeployment.properties.parameters.PSObject.Properties['identity'] -or
-        $activityDeployment.properties.parameters.PSObject.Properties['verifiedRoleDefinitionIds'] -or
-        $activityDeployment.properties.parameters.PSObject.Properties['deployRemediationRoleAssignments'] -or
-        $diagnosticsDeployment.properties.parameters.PSObject.Properties['location'] -or
-        $diagnosticsDeployment.properties.parameters.PSObject.Properties['identity'] -or
-        $diagnosticsDeployment.properties.parameters.PSObject.Properties['verifiedRoleDefinitionIds'] -or
-        $diagnosticsDeployment.properties.parameters.PSObject.Properties['deployRemediationRoleAssignments']) {
-        Stop-Test 'Disabled/Audit logging assignments must remain identity-free and non-remediating.'
+    foreach ($nonRemediatingDeployment in @($activityDeployment, $diagnosticsDeployment)) {
+        if ($nonRemediatingDeployment.properties.parameters.location.value -ne "[parameters('deploymentLocation')]" -or
+            $nonRemediatingDeployment.properties.parameters.identity.value.type -ne 'SystemAssigned' -or
+            $nonRemediatingDeployment.properties.parameters.deployRemediationRoleAssignments.value -ne $false) {
+            Stop-Test 'Disabled/Audit logging assignments must have a required identity but no remediation roles.'
+        }
     }
     foreach ($remediatingDeployment in @($activityRemediatingDeployment, $diagnosticsRemediatingDeployment)) {
         if ($remediatingDeployment.properties.parameters.location.value -ne "[parameters('deploymentLocation')]" -or
@@ -3721,12 +3721,12 @@ function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
         Stop-Test 'Workspace destination RBAC must grant role assignments at the workspace scope using built-in role IDs.'
     }
     if ($compiledJson.outputs.loggingAssignments.value.activityLogExport.policyAssignmentId -ne "[if(variables('activityLogRemediationDeployRequested'), reference('activityLogExportRemediatingAssignment').outputs.policyAssignmentId.value, reference('activityLogExportAssignment').outputs.policyAssignmentId.value)]" -or
-        $compiledJson.outputs.loggingAssignments.value.activityLogExport.identityPrincipalId -ne "[if(variables('activityLogRemediationDeployRequested'), reference('activityLogExportRemediatingAssignment').outputs.identityPrincipalId.value, '')]" -or
+        $compiledJson.outputs.loggingAssignments.value.activityLogExport.identityPrincipalId -ne "[if(variables('activityLogRemediationDeployRequested'), reference('activityLogExportRemediatingAssignment').outputs.identityPrincipalId.value, reference('activityLogExportAssignment').outputs.identityPrincipalId.value)]" -or
         $compiledJson.outputs.loggingAssignments.value.activityLogExport.roleAssignmentIds -ne "[if(variables('activityLogRemediationDeployRequested'), reference('activityLogExportRemediatingAssignment').outputs.roleAssignmentIds.value, createArray())]" -or
         $compiledJson.outputs.loggingAssignments.value.activityLogExport.remediationRoleAssignmentIds -ne "[if(variables('activityLogRemediationDeployRequested'), reference('activityLogExportRemediatingAssignment').outputs.roleAssignmentIds.value, createArray())]" -or
         $compiledJson.outputs.loggingAssignments.value.activityLogExport.effect -ne "[parameters('activityLogExportPolicyEffect')]" -or
         $compiledJson.outputs.loggingAssignments.value.resourceDiagnostics.policyAssignmentId -ne "[if(variables('resourceDiagnosticsRemediationDeployRequested'), reference('resourceDiagnosticsRemediatingAssignment').outputs.policyAssignmentId.value, reference('resourceDiagnosticsAssignment').outputs.policyAssignmentId.value)]" -or
-        $compiledJson.outputs.loggingAssignments.value.resourceDiagnostics.identityPrincipalId -ne "[if(variables('resourceDiagnosticsRemediationDeployRequested'), reference('resourceDiagnosticsRemediatingAssignment').outputs.identityPrincipalId.value, '')]" -or
+        $compiledJson.outputs.loggingAssignments.value.resourceDiagnostics.identityPrincipalId -ne "[if(variables('resourceDiagnosticsRemediationDeployRequested'), reference('resourceDiagnosticsRemediatingAssignment').outputs.identityPrincipalId.value, reference('resourceDiagnosticsAssignment').outputs.identityPrincipalId.value)]" -or
         $compiledJson.outputs.loggingAssignments.value.resourceDiagnostics.roleAssignmentIds -ne "[if(variables('resourceDiagnosticsRemediationDeployRequested'), reference('resourceDiagnosticsRemediatingAssignment').outputs.roleAssignmentIds.value, createArray())]" -or
         $compiledJson.outputs.loggingAssignments.value.resourceDiagnostics.remediationRoleAssignmentIds -ne "[if(variables('resourceDiagnosticsRemediationDeployRequested'), reference('resourceDiagnosticsRemediatingAssignment').outputs.roleAssignmentIds.value, createArray())]" -or
         $compiledJson.outputs.loggingAssignments.value.resourceDiagnostics.effect -ne "[parameters('resourceDiagnosticsPolicyEffect')]" -or
@@ -4056,8 +4056,7 @@ function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
     }
 
     # Every built-in member must be pinned to the exact major version verified in
-    # the control catalog, and the in-repository custom member must stay unpinned
-    # because definitionVersion applies only to built-in definitions.
+    # the control catalog; the custom member pins its declared major version.
     $expectedDefinitionVersions = [ordered]@{
         'storage-secure-transfer'                = '2.*.*'
         'storage-minimum-tls'                    = '1.*.*'
@@ -4070,7 +4069,7 @@ function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
         'key-vault-network-access'               = '3.*.*'
         'key-vault-diagnostics-readiness'        = '5.*.*'
         'storage-customer-managed-key'           = '1.*.*'
-        'storage-approved-customer-managed-key'  = $null
+        'storage-approved-customer-managed-key'  = '1.*.*'
     }
     foreach ($dataProtectionReference in $dataProtectionReferences) {
         $referenceId = $dataProtectionReference.policyDefinitionReferenceId
@@ -4086,8 +4085,8 @@ function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
         }
         $referenceBuiltInId = [regex]::Match($dataProtectionReference.policyDefinitionId, '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}').Value
         if (-not $referenceBuiltInId) {
-            if ($null -ne $actualDefinitionVersion) {
-                Stop-Test "Custom data-protection reference '$referenceId' must not declare definitionVersion."
+            if ($actualDefinitionVersion -ne '1.*.*') {
+                Stop-Test "Custom data-protection reference '$referenceId' must pin its declared major version 1.*.*."
             }
             continue
         }
@@ -4341,14 +4340,14 @@ function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
     if (-not $vaultDiagnosticsAuditAssignment -or
         $vaultDiagnosticsAuditAssignment.condition -ne "[variables('vaultDiagnosticsAuditActive')]" -or
         $vaultDiagnosticsAuditAssignment.scope -notmatch 'landingZonesManagementGroupId' -or
-        $vaultDiagnosticsAuditAssignment.properties.parameters.PSObject.Properties['identity'] -or
-        $vaultDiagnosticsAuditAssignment.properties.parameters.PSObject.Properties['verifiedRoleDefinitionIds'] -or
-        @($auditAssignmentResources | Where-Object { $_.PSObject.Properties['identity'] }).Count -ne 0 -or
+        $vaultDiagnosticsAuditAssignment.properties.parameters.identity.value.type -ne 'SystemAssigned' -or
+        $vaultDiagnosticsAuditAssignment.properties.parameters.deployRemediationRoleAssignments.value -ne $false -or
+        @($auditAssignmentResources | Where-Object { $_.PSObject.Properties['identity'] }).Count -ne 1 -or
         @($auditAssignmentResources | Where-Object { $_.type -eq 'Microsoft.Authorization/roleAssignments' }).Count -ne 0 -or
         $vaultDiagnosticsAuditAssignment.properties.parameters.definitionVersion.value -ne $backupMajorVersions['REQ-BKP-07'] -or
         (Compare-Object @($vaultDiagnosticsAuditAssignment.properties.parameters.parameters.value.resourceTypeList.value) `
             @('microsoft.recoveryservices/vaults') -SyncWindow 0)) {
-        Stop-Test 'An audit-only or disabled vault diagnostics assignment must have no identity and grant no role.'
+        Stop-Test 'An audit-only or disabled vault diagnostics assignment must have a required identity and grant no role.'
     }
     $workspaceIdFunction = [string]$compiledJson.functions[0].members.isLogAnalyticsWorkspaceId.output.value
     foreach ($requiredWorkspaceIdCheck in @(
@@ -4413,7 +4412,7 @@ function global:Read-Host { param([string]$Prompt) 'eslz-demo' }
         ([string]$compiledJson.outputs.backupRemediation.value.vaultDiagnosticsPrincipalId) -notmatch 'identityPrincipalId' -or
         ([string]$compiledJson.outputs.backupRemediation.value.vaultDiagnosticsWorkspaceAccessGranted) -notmatch 'vaultDiagnosticsWorkspaceAccessActive' -or
         ([string]$compiledJson.outputs.backupRemediation.value.vaultDiagnosticsWorkspaceRoleAssignmentIds) -notmatch 'roleAssignmentIds' -or
-        ([string]$compiledJson.outputs.backupRemediation.value.vaultDiagnosticsIdentityAttached) -notmatch 'vaultDiagnosticsRemediationActive' -or
+        ([string]$compiledJson.outputs.backupRemediation.value.vaultDiagnosticsIdentityAttached) -notmatch 'vaultDiagnosticsActive' -or
         ([string]$compiledJson.outputs.backupRemediation.value.vaultDiagnosticsRoleDefinitionIds) -notmatch 'vaultDiagnosticsRemediationActive') {
         Stop-Test 'Backup governance must never start remediation tasks and must report automatic DeployIfNotExists protection and diagnostics cost impact.'
     }

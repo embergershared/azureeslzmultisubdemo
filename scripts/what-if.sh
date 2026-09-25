@@ -15,5 +15,5 @@ az deployment tenant what-if \
   --location "${deployment_location}" \
   --template-file "${PROJECT_DIR}/main.bicep" \
   --parameters "@${PARAMETER_FILE}" \
-  --result-format FullResourcePayloads
-
+  --result-format FullResourcePayloads \
+  --exclude-change-types NoChange

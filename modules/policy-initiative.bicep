@@ -80,19 +80,21 @@ resource initiative 'Microsoft.Authorization/policySetDefinitions@2025-03-01' = 
       managedBy: 'Bicep'
     }
     version: initiativeVersion
+    versions: [
+      initiativeVersion
+    ]
     parameters: initiativeParameters
     policyDefinitionGroups: policyDefinitionGroups
-    policyDefinitions: [
-      for policyDefinitionReference in validatedPolicyDefinitionReferences: {
-        policyDefinitionId: policyDefinitionReference.policyDefinitionId
-        policyDefinitionReferenceId: policyDefinitionReference.policyDefinitionReferenceId
-        ...(!empty(policyDefinitionReference.?definitionVersion ?? '') ? {
-          definitionVersion: policyDefinitionReference.?definitionVersion
-        } : {})
-        parameters: policyDefinitionReference.parameters
-        groupNames: policyDefinitionReference.groupNames
-      }
-    ]
+    // A property copy loop re-evaluates embedded Policy expressions as ARM expressions.
+    policyDefinitions: map(validatedPolicyDefinitionReferences, policyDefinitionReference => {
+      policyDefinitionId: policyDefinitionReference.policyDefinitionId
+      policyDefinitionReferenceId: policyDefinitionReference.policyDefinitionReferenceId
+      ...(!empty(policyDefinitionReference.?definitionVersion ?? '') ? {
+        definitionVersion: policyDefinitionReference.?definitionVersion
+      } : {})
+      parameters: policyDefinitionReference.parameters
+      groupNames: policyDefinitionReference.groupNames
+    })
   }
 }
 

@@ -36,7 +36,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02
   }
 }
 
-resource sentinelOnboarding 'Microsoft.SecurityInsights/onboardingStates@2024-09-01' = if (deploySentinel) {
+resource sentinelOnboarding 'Microsoft.SecurityInsights/onboardingStates@2025-09-01' = if (deploySentinel) {
   scope: logAnalyticsWorkspace
   name: 'default'
   properties: {}

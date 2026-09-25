@@ -46,6 +46,62 @@ The deployment also creates two management-group subscription associations:
 
 The deployment does **not** create subscriptions.
 
+#### Hierarchy and directly assigned policies
+
+This diagram shows the **19 assignments** created by the safe profile with
+`namePrefix=eslz-demo` and `workloadArchetype=corp`. For the `online` archetype,
+replace `eslz-demo-corp` with `eslz-demo-online`; the assignments are unchanged.
+Each management-group box lists the assignment **resource names created directly
+at that scope**. Section [1.4](#14-policy-assignments-created-by-the-safe-profile)
+maps these groups to the display names shown in the portal and their safe posture.
+
+Arrows show the parent-child hierarchy. Assignments inherit downward; they are
+**not created again** at every child scope.
+
+```mermaid
+flowchart TD
+    tenant["Existing tenant root<br/>No assignments from this template"]
+    root["Demo root: eslz-demo<br/><b>8 direct assignments</b><br/>demo-allowed-us-locs<br/>demo-audit-public-ip<br/>demo-block-expensive<br/>demo-deploy-restrictions<br/>demo-mcsb-baseline<br/>demo-defender-cspm<br/>demo-activity-logs<br/>demo-resource-diags"]
+    platform["Platform: eslz-demo-platform<br/><b>1 direct assignment</b><br/>demo-audit-platform-tags"]
+    connectivity["Connectivity: eslz-demo-connectivity<br/><b>0 direct assignments</b><br/>Inherits 9 from Demo root and Platform"]
+    landingzones["Landing Zones: eslz-demo-landingzones<br/><b>8 direct assignments</b><br/>demo-require-rg-tags<br/>demo-data-protection<br/>demo-backup-posture<br/>demo-audit-vuln-assess<br/>demo-audit-ama-windows<br/>demo-audit-ama-linux<br/>demo-defender-servers<br/>demo-defender-storage"]
+    workload["Corp: eslz-demo-corp<br/><b>2 direct assignments</b><br/>demo-network-ingress<br/>demo-private-access"]
+    connectivitySub["Existing connectivity subscription<br/>9 inherited assignments; 0 direct"]
+    workloadSub["Existing workload subscription<br/>18 inherited assignments; 0 direct"]
+
+    tenant --> root
+    root --> platform
+    root --> landingzones
+    platform --> connectivity
+    connectivity --> connectivitySub
+    landingzones --> workload
+    workload --> workloadSub
+
+    classDef existing fill:#F3F2F1,stroke:#605E5C,color:#000000
+    classDef demoRoot fill:#CFE4FA,stroke:#0078D4,color:#000000
+    classDef managementGroup fill:#E8DAEF,stroke:#5C2D91,color:#000000
+    classDef subscription fill:#DFF6DD,stroke:#107C10,color:#000000
+    class tenant existing
+    class root demoRoot
+    class platform,connectivity,landingzones,workload managementGroup
+    class connectivitySub,workloadSub subscription
+```
+
+**Count direct assignments once:** 8 at Demo root + 1 at Platform + 0 at
+Connectivity + 8 at Landing Zones + 2 at Corp/Online = **19**. Subscription counts
+include only assignments inherited from this template, not any pre-existing
+tenant policies. An initiative counts as one assignment regardless of how many
+policies it contains; assignments with `Disabled` effects still count.
+
+Optional additions are **not shown in the safe-profile diagram**:
+
+| Scope | Optional assignment resource names | Opt-in |
+|---|---|---|
+| Demo root | `demo-cis-foundations`, `demo-nist-800-53-r5` | Respective CIS or NIST benchmark switch |
+| Landing Zones | `demo-inherit-rg-tags`, `demo-vm-backup-<index>`, `demo-vault-diagnostics` | Respective tag inheritance, VM backup remediation, or vault diagnostics switch and required inputs; VM backup creates one assignment per approved vault entry |
+| Corp/Online | `demo-firewall-routes` | `enableFirewallRouteGuardrails` and required inputs |
+| Optional Critical Infrastructure child of Landing Zones | `demo-critical-private`; optionally `demo-critical-fw-routes` and `demo-nerc-cip-technical` | `enableCriticalInfrastructure` creates the branch and private-access assignment; firewall and NERC assignments require their own additional opt-ins and valid inputs |
+
 ### 1.2 Custom policy definitions
 
 The following 10 custom definitions are stored at the new demo-root management
@@ -103,7 +159,7 @@ supplied subscriptions:
 | Demo - block common expensive resources and VM SKUs | Deny definition in `DoNotEnforce` |
 | Demo - root deployment restrictions | Deny members in `DoNotEnforce`; audit members remain audit |
 | Demo - Microsoft cloud security benchmark | Enabled assignment in `DoNotEnforce` |
-| Demo - Microsoft Defender CSPM | Effect `Disabled`; no managed identity |
+| Demo - Microsoft Defender CSPM | Effect `Disabled`; role-less managed identity |
 | Demo - export Activity Logs to Log Analytics | Effect `Disabled` |
 | Demo - export supported resource diagnostics | Effect `Disabled` |
 
@@ -125,8 +181,8 @@ This assignment inherits through Connectivity to the connectivity subscription.
 | Demo - audit VM vulnerability assessment | `AuditIfNotExists` |
 | Demo - audit Windows Azure Monitor Agent presence | `AuditIfNotExists` |
 | Demo - audit Linux Azure Monitor Agent presence | `AuditIfNotExists` |
-| Demo - Microsoft Defender for Servers | Effect `Disabled`; no managed identity |
-| Demo - Microsoft Defender for Storage | Effect `Disabled`; no managed identity |
+| Demo - Microsoft Defender for Servers | Effect `Disabled`; role-less managed identity |
+| Demo - Microsoft Defender for Storage | Effect `Disabled`; role-less managed identity |
 
 These assignments inherit to the Corp/Online workload subscription.
 
@@ -156,7 +212,7 @@ Keep the settings in this runbook unchanged and the deployment does not create:
 - policy exemptions;
 - the Critical Infrastructure management group;
 - policy remediation tasks;
-- managed identities for Defender assignments;
+- remediation RBAC grants for Defender or logging assignment identities;
 - permanent or eligible Owner assignments.
 
 Azure Cloud Shell may ask to create or mount its own storage when it is first
@@ -411,6 +467,8 @@ the preview line by line.
 - 10 custom policy definitions at the demo root;
 - eight custom policy initiatives at the demo root;
 - 19 safe-default policy assignments at the scopes listed in section 1;
+- five role-less system-assigned identities for the three Defender plan
+  assignments and the two logging assignments, required even with disabled effects;
 - tenant and nested deployment records.
 
 ### Stop conditions
@@ -424,7 +482,7 @@ Do not deploy if what-if shows:
 - a resource group, VNet, NSG, VM, public IP, firewall, gateway, database, Log
   Analytics workspace, Sentinel onboarding, or Recovery Services vault;
 - any RBAC role assignment;
-- a managed identity on a Defender assignment;
+- a role grant to a Defender or disabled logging assignment identity;
 - a Critical Infrastructure management group;
 - a policy exemption;
 - a deny-capable assignment with enforcement mode `Default`;

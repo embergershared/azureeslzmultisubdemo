@@ -224,8 +224,9 @@ Each built-in member is pinned to the exact major version recorded in
 `policy/control-catalog.json` (for example `2.*.*`) through the reusable
 `definitionVersion` support in `modules/policy-initiative.bicep`, so a future
 major revision of a built-in never changes the assignment's behaviour without
-review. The in-repository custom member is intentionally unpinned, because
-`definitionVersion` applies only to built-in definitions.
+review. Custom definitions and initiatives are also explicitly pinned to their
+declared major versions, matching
+[Azure Policy's custom-definition versioning](https://learn.microsoft.com/azure/governance/policy/concepts/assignment-structure).
 
 The public-access and diagnostics controls audit configuration and readiness
 only. They do not deploy a private endpoint, private DNS zone, virtual
@@ -365,14 +366,12 @@ no ingestion cost is incurred until both are changed deliberately. The
 `vaultDiagnosticsAutomaticSettingsOnResourceWrite` next to
 `vaultDiagnosticsPrincipalId` and `vaultDiagnosticsWorkspaceResourceId`.
 
-Least privilege follows the effect. With the default `AuditIfNotExists` — or
-with `Disabled` — the control is assigned through the identity-free assignment
-module, so **no** managed identity is created and **no** role assignment is made
-anywhere. Only `vaultDiagnosticsEffect = 'DeployIfNotExists'` uses the
-remediating assignment that attaches a system-assigned identity and grants Log
-Analytics Contributor; `backupRemediation.vaultDiagnosticsIdentityAttached`
-reports which path is active, and `vaultDiagnosticsRoleDefinitionIds` is empty on
-the audit path.
+Azure requires a system-assigned identity for this deployment-capable definition,
+including with `AuditIfNotExists` or `Disabled`. On those paths **no role
+assignment is made**. Only `vaultDiagnosticsEffect = 'DeployIfNotExists'` grants
+Log Analytics Contributor; `backupRemediation.vaultDiagnosticsIdentityAttached`
+reports whether the diagnostics assignment is active, and
+`vaultDiagnosticsRoleDefinitionIds` remains empty on the audit path.
 
 That identity is granted Log Analytics Contributor at the assigned Landing Zones
 scope, which does **not** cover a workspace in the connectivity subscription or
@@ -466,6 +465,9 @@ management-group scope. It accepts initiative parameter definitions, typed
 policy references and groups, rejects empty or case-insensitively duplicate
 reference IDs, records v2 Bicep-managed metadata, and exposes deterministic
 definition outputs for later assignment modules.
+Member policies are composed with `map()` rather than an ARM property-copy loop
+so embedded policy expressions such as `[parameters('vmBackupCoverageEffect')]`
+remain policy-time bindings, not deployment-template parameter lookups.
 
 `examples/initiative-composition.bicep` is a compile-time example scoped only
 to a supplied dedicated demo-root management group. It combines the verified
@@ -651,7 +653,9 @@ supplied existing workspace, even if the names happen to collide.
 
 The demo root also assigns two remediation-capable built-ins for Activity Log
 and supported-resource diagnostics export. Both assignments use
-system-assigned identities and never start remediation tasks automatically.
+system-assigned identities, required even with audit/disabled effects, and never
+start remediation tasks automatically. Those identities remain role-less unless
+the separate remediation RBAC opt-ins below are enabled for a DINE effect.
 They consume the same effective workspace ID output used by central
 monitoring. If either assignment effect is enabled (`DeployIfNotExists` for
 Activity Logs or `AuditIfNotExists`/`DeployIfNotExists` for resource
@@ -696,10 +700,9 @@ Management, including CIEM findings), Defender for Servers, and Defender for
 Storage, each behind its own explicit, safe-by-default (`false`) opt-in
 parameter: `enableDefenderCspm`, `enableDefenderForServers`,
 `enableDefenderForStorage`. While a parameter stays `false` (the default),
-the corresponding assignment creates **no managed identity at all**
-(`identity.type` is `None`) and its `effect` is `Disabled`, so a normal
-deployment of this project can never enable a paid plan, incur license cost,
-or create any standing identity or role. A free, audit-only policy that
+the corresponding assignment has a required **role-less system-assigned identity**
+and its `effect` is `Disabled`. The identity does not enable a paid plan or grant
+standing access. A free, audit-only policy that
 checks for a supported vulnerability assessment solution on virtual machines
 is also always assigned (no parameter); it never deploys a scanner and never
 depends on a paid plan. Two further free, audit-only policies — one for
@@ -707,8 +710,7 @@ Windows, one for Linux — check that the current, supported Azure Monitor
 Agent is present on virtual machines; like the vulnerability-assessment
 audit, they require no identity, no role, and no opt-in.
 
-Setting an `enableDefender*` parameter to `true` only flips that plan's
-`identity.type` to `SystemAssigned` and its `effect` to
+Setting an `enableDefender*` parameter to `true` only flips that plan's effect to
 `DeployIfNotExists` — it still never grants that identity any role. These
 three paid-plan built-ins only support remediation via the Owner role at the
 subscription scope, and this project's automatic RBAC granting deliberately
@@ -787,10 +789,10 @@ The person or service principal running the deployment must have:
    management group when `enableVmBackupRemediation=true`, or when
    `enableVaultDiagnostics=true` **and**
    `vaultDiagnosticsEffect = 'DeployIfNotExists'`, because only those
-   assignments create a system-assigned identity and grant it Virtual Machine
+   assignments grant the system-assigned identity Virtual Machine
    Contributor plus Backup Contributor (backup) or Log Analytics Contributor
    (diagnostics). An `AuditIfNotExists` or `Disabled` diagnostics assignment
-   needs no identity and no role assignment;
+   needs the required identity but no role assignment;
 6. Backup Contributor for the backup remediation identity in the vault's own
    subscription when `allowCrossSubscriptionBackupVaults=true`, since the
    built-in deploys the protected item into that subscription and this
@@ -939,7 +941,19 @@ macOS or Linux:
 Preflight builds every Bicep entry point, rejects placeholders and malformed or
 duplicate IDs, checks the signed-in tenant, confirms both subscriptions exist
 and are enabled, and verifies that the tenant-root management group can be read.
-What-if runs a tenant-scope preview but does not deploy.
+What-if runs preflight followed by a tenant-scope preview but does not deploy.
+The deploy wrapper uses that same path, so preflight runs once per invocation.
+Preview output omits only `NoChange` entries; create, modify, delete, and
+unsupported changes remain visible with full property details.
+
+Custom policies and initiatives declare `properties.version` and the corresponding
+`properties.versions` list; their assignments and initiative members pin the
+matching major version. The demo currently publishes one version per definition,
+so each list contains that version. If you retain additional published versions,
+extend these lists to describe that history rather than claiming only the latest
+version exists. Version-list differences remain visible; they are not filtered
+out of what-if. Azure's generic what-if notice and other provider-default
+differences may still appear.
 
 Preflight reads built-in policy and initiative versions from either flattened
 Azure CLI output or the ARM `properties` envelope, including `metadata.version`.
