@@ -2,8 +2,8 @@
 
 This document is the human-readable companion to the machine-readable [`policy/control-catalog.json`](../policy/control-catalog.json). It maps every customer requirement identified for v2.0 to its implementation mechanism, before any new policy code is written. Regenerate this document whenever the JSON catalog changes so the two stay consistent.
 
-- **Catalog version:** `1.4.0`
-- **Generated on:** `2026-09-02`
+- **Catalog version:** `1.5.0`
+- **Generated on:** `2026-10-21`
 - **Source issue:** https://github.com/johnstel/azureeslzmultisubdemo/issues/3
 - **Total control records:** 69
 
@@ -113,18 +113,18 @@ and the verification commands are in
 
 | ID | Customer requirement | Scope | Classification | Mechanism | Built-in ID | Version | Effects | Enforcement phase |
 |---|---|---|---|---|---|---|---|---|
-| REQ-TAG-01 | Require the 'CostCenter' tag on every resource group. | landingzones | azure-policy | Require a tag on resource groups (built-in: Yes) | `96670d01-0a4d-4649-9c89-2d3abc0a5025` | 1.0.0 | Deny | deny-do-not-enforce |
-| REQ-TAG-02 | Require the 'ApplicationName' tag on every resource group. | landingzones | azure-policy | Require a tag on resource groups (built-in: Yes) | `96670d01-0a4d-4649-9c89-2d3abc0a5025` | 1.0.0 | Deny | deny-do-not-enforce |
-| REQ-TAG-03 | Require the 'Owner' tag on every resource group. | landingzones | azure-policy | Require a tag on resource groups (built-in: Yes) | `96670d01-0a4d-4649-9c89-2d3abc0a5025` | 1.0.0 | Deny | deny-do-not-enforce |
-| REQ-TAG-04 | Require the 'Environment' tag on every resource group. | landingzones | azure-policy | Require a tag on resource groups (built-in: Yes) | `96670d01-0a4d-4649-9c89-2d3abc0a5025` | 1.0.0 | Deny | deny-do-not-enforce |
-| REQ-TAG-05 | Require the 'DataClassification' tag on every resource group. | landingzones | azure-policy | Require a tag on resource groups (built-in: Yes) | `96670d01-0a4d-4649-9c89-2d3abc0a5025` | 1.0.0 | Deny | deny-do-not-enforce |
-| REQ-TAG-06 | Require the 'SSP-ID' tag on every resource group. | landingzones | azure-policy | Require a tag on resource groups (built-in: Yes) | `96670d01-0a4d-4649-9c89-2d3abc0a5025` | 1.0.0 | Deny | deny-do-not-enforce |
+| REQ-TAG-01 | Require the 'CostCenter' tag with a non-empty value on every resource group. | landingzones | azure-policy | Demo - require a non-empty tag on resource groups (built-in: No) | `${namePrefix}-require-rg-tag-not-empty` | 1.0.0 | deny | deny-do-not-enforce |
+| REQ-TAG-02 | Require the 'Compliance' tag on every resource group with one of the approved values: 'NERC-CIP', 'SOX', 'PCI-DSS', 'HIPAA', 'NIST-CSF', 'Internal', 'None'. | landingzones | azure-policy | Demo - require a tag from an allowed value list on resource groups (built-in: No) | `${namePrefix}-require-rg-tag-allowed-value` | 1.0.0 | deny | deny-do-not-enforce |
+| REQ-TAG-03 | Require the 'Owner' tag with a non-empty value on every resource group. | landingzones | azure-policy | Demo - require a non-empty tag on resource groups (built-in: No) | `${namePrefix}-require-rg-tag-not-empty` | 1.0.0 | deny | deny-do-not-enforce |
+| REQ-TAG-04 | Require the 'Environment' tag on every resource group with one of the approved values: 'Prod', 'Non-Prod', 'Dev', 'Test', 'QA', 'Sandbox', 'Other'. | landingzones | azure-policy | Demo - require a tag from an allowed value list on resource groups (built-in: No) | `${namePrefix}-require-rg-tag-allowed-value` | 1.0.0 | deny | deny-do-not-enforce |
+| REQ-TAG-05 | Require the 'DataClassification' tag on every resource group with one of the approved values: 'PSEG Internal', 'PSEG Confidential', 'PSEG Restricted'. | landingzones | azure-policy | Demo - require a tag from an allowed value list on resource groups (built-in: No) | `${namePrefix}-require-rg-tag-allowed-value` | 1.0.0 | deny | deny-do-not-enforce |
+| REQ-TAG-06 | Require the 'Criticality' tag on every resource group with one of the approved values: 'Low', 'Medium', 'High', 'Critical'. | landingzones | azure-policy | Demo - require a tag from an allowed value list on resource groups (built-in: No) | `${namePrefix}-require-rg-tag-allowed-value` | 1.0.0 | deny | deny-do-not-enforce |
 | REQ-TAG-07 | Inherit the 'CostCenter' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
-| REQ-TAG-08 | Inherit the 'ApplicationName' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
+| REQ-TAG-08 | Inherit the 'Compliance' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
 | REQ-TAG-09 | Inherit the 'Owner' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
 | REQ-TAG-10 | Inherit the 'Environment' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
 | REQ-TAG-11 | Inherit the 'DataClassification' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
-| REQ-TAG-12 | Inherit the 'SSP-ID' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
+| REQ-TAG-12 | Inherit the 'Criticality' tag from the resource group to taggable child resources when missing, without overwriting existing values. | landingzones | azure-policy | Inherit a tag from the resource group if missing (built-in: Yes) | `ea3f2387-9b95-492a-a190-fcdc54f7b070` | 1.0.0 | Modify | deployifnotexists-opt-in |
 
 ## Network security
 

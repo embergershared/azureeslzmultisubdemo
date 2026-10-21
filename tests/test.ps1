@@ -725,7 +725,21 @@ try {
     & (Join-Path $ScriptDir 'validate-policy-assignment.ps1') -CompiledMainTemplate $compiledTemplate
     $compiledJson = Get-Content -LiteralPath $compiledTemplate -Raw | ConvertFrom-Json
     Write-Host '    Confirm the exact six-tag initiative and compliant evidence resource groups...'
-    $requiredTags = @('CostCenter', 'ApplicationName', 'Owner', 'Environment', 'DataClassification', 'SSP-ID')
+    $requiredTags = @('CostCenter', 'Compliance', 'Owner', 'Environment', 'DataClassification', 'Criticality')
+    $nonEmptyTags = @('CostCenter', 'Owner')
+    $expectedAllowedTagValues = @{
+        Environment = @('Prod', 'Non-Prod', 'Dev', 'Test', 'QA', 'Sandbox', 'Other')
+        DataClassification = @('PSEG Internal', 'PSEG Confidential', 'PSEG Restricted')
+        Compliance = @('NERC-CIP', 'SOX', 'PCI-DSS', 'HIPAA', 'NIST-CSF', 'Internal', 'None')
+        Criticality = @('Low', 'Medium', 'High', 'Critical')
+    }
+    $compiledAllowedTagValues = $compiledJson.variables.governanceTagAllowedValues
+    foreach ($allowedTag in $expectedAllowedTagValues.Keys) {
+        if (-not $compiledAllowedTagValues.PSObject.Properties[$allowedTag] -or
+            (Compare-Object -ReferenceObject $expectedAllowedTagValues[$allowedTag] -DifferenceObject @($compiledAllowedTagValues.$allowedTag) -CaseSensitive -SyncWindow 0)) {
+            Stop-Test "governanceTagAllowedValues.$allowedTag must contain the exact approved values in order."
+        }
+    }
     $initiativeDeployment = Find-JsonObjects -Node $compiledJson -Predicate {
         param($node)
         $node.PSObject.Properties['type'] -and $node.type -eq 'Microsoft.Resources/deployments' -and
@@ -748,8 +762,15 @@ try {
         Stop-Test 'Required resource-group tag initiative must contain the exact six case-sensitive tag names.'
     }
     foreach ($tagReference in $tagReferences) {
-        if ($tagReference.policyDefinitionId -cne "[variables('requireResourceGroupTagPolicyDefinitionId')]") {
-            Stop-Test 'Every required tag must use the verified built-in resource-group tag policy.'
+        $referenceTag = $tagReference.parameters.tagName.value
+        if ($referenceTag -cin $nonEmptyTags) {
+            if ($tagReference.policyDefinitionId -cne "[reference('policyLibrary').outputs.requireResourceGroupTagNotEmptyPolicyDefinitionId.value]" -or
+                $tagReference.parameters.PSObject.Properties['allowedValues']) {
+                Stop-Test "Required tag $referenceTag must use the non-empty resource-group tag definition."
+            }
+        } elseif ($tagReference.policyDefinitionId -cne "[reference('policyLibrary').outputs.requireResourceGroupTagAllowedValuePolicyDefinitionId.value]" -or
+            $tagReference.parameters.allowedValues.value -cne "[variables('governanceTagAllowedValues').$referenceTag]") {
+            Stop-Test "Required tag $referenceTag must use the allowed-value resource-group tag definition and its approved values."
         }
         if ($tagReference.definitionVersion -cne '1.*.*') {
             Stop-Test 'Every required tag policy reference must pin the catalog-supported 1.*.* major version.'
@@ -780,20 +801,24 @@ try {
     }
     foreach ($nonComplianceMessage in $nonComplianceMessages) {
         $tagName = $tagsByReference[$nonComplianceMessage.policyDefinitionReferenceId]
-        if ($null -eq $tagName -or
-            $nonComplianceMessage.message -cne "Resource groups must include the $tagName tag.") {
+        $expectedMessage = if ($tagName -cin $nonEmptyTags) {
+            "Resource groups must include a non-empty $tagName tag."
+        } elseif ($null -ne $tagName) {
+            "Resource groups must set the $tagName tag to one of: $($expectedAllowedTagValues[$tagName] -join ', ')."
+        }
+        if ($null -eq $tagName -or $nonComplianceMessage.message -cne $expectedMessage) {
             Stop-Test "Noncompliance message for $($nonComplianceMessage.policyDefinitionReferenceId) does not match its required tag."
         }
     }
     $expectedEvidenceTags = @{
         'connectivity-evidence' = @{
-            CostCenter = 'Demo'; ApplicationName = 'Connectivity Evidence'; Owner = 'Platform Team'
-            Environment = 'Sandbox'; DataClassification = 'Non-sensitive'; 'SSP-ID' = 'Demo'
+            CostCenter = 'Demo'; Owner = 'Platform Team'; Environment = 'Sandbox'
+            DataClassification = 'PSEG Internal'; Compliance = 'None'; Criticality = 'Low'
             Purpose = 'Landing Zone Evidence'
         }
         'workload-evidence' = @{
-            CostCenter = 'Demo'; ApplicationName = 'Landing Zone Demo'; Owner = 'Workload Team'
-            Environment = 'Sandbox'; DataClassification = 'Non-sensitive'; 'SSP-ID' = 'Demo'
+            CostCenter = 'Demo'; Owner = 'Workload Team'; Environment = 'Sandbox'
+            DataClassification = 'PSEG Internal'; Compliance = 'None'; Criticality = 'Low'
         }
     }
     foreach ($evidenceDeploymentName in @('connectivity-evidence', 'workload-evidence')) {

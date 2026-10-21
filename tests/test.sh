@@ -654,7 +654,14 @@ printf '    Confirm the exact six-tag initiative and compliant evidence resource
 jq -e '
   def deployment($name):
     first(.. | objects | select(.type? == "Microsoft.Resources/deployments" and .name? == $name));
-  ["CostCenter", "ApplicationName", "Owner", "Environment", "DataClassification", "SSP-ID"] as $requiredTags |
+  ["CostCenter", "Compliance", "Owner", "Environment", "DataClassification", "Criticality"] as $requiredTags |
+  ["CostCenter", "Owner"] as $nonEmptyTags |
+  {
+    "Environment": ["Prod", "Non-Prod", "Dev", "Test", "QA", "Sandbox", "Other"],
+    "DataClassification": ["PSEG Internal", "PSEG Confidential", "PSEG Restricted"],
+    "Compliance": ["NERC-CIP", "SOX", "PCI-DSS", "HIPAA", "NIST-CSF", "Internal", "None"],
+    "Criticality": ["Low", "Medium", "High", "Critical"]
+  } as $allowedTagValues |
   deployment("resource-group-tags-initiative") as $initiative |
   deployment("assign-resource-group-tags") as $assignment |
   deployment("tag-inheritance-initiative") as $inheritanceInitiative |
@@ -666,8 +673,15 @@ jq -e '
   ($initiative.properties.parameters.policyDefinitionReferences.value | map(.parameters.tagName.value) | sort) ==
     ($requiredTags | sort) and
   ($initiative.properties.parameters.policyDefinitionReferences.value | length) == 6 and
-  ([$initiative.properties.parameters.policyDefinitionReferences.value[].policyDefinitionId] | unique) ==
-    ["[variables(\u0027requireResourceGroupTagPolicyDefinitionId\u0027)]"] and
+  all($initiative.properties.parameters.policyDefinitionReferences.value[];
+    .parameters.tagName.value as $tag |
+    if ($nonEmptyTags | index($tag)) != null then
+      .policyDefinitionId == "[reference(\u0027policyLibrary\u0027).outputs.requireResourceGroupTagNotEmptyPolicyDefinitionId.value]" and
+      (.parameters | has("allowedValues") | not)
+    else
+      .policyDefinitionId == "[reference(\u0027policyLibrary\u0027).outputs.requireResourceGroupTagAllowedValuePolicyDefinitionId.value]" and
+      .parameters.allowedValues.value == "[variables(\u0027governanceTagAllowedValues\u0027).\($tag)]"
+    end) and
   all($initiative.properties.parameters.policyDefinitionReferences.value[]; .definitionVersion == "1.*.*") and
   ($initiative.scope | contains("demoRootManagementGroupId")) and
   ($assignment.scope | contains("landingZonesManagementGroupId")) and
@@ -677,7 +691,12 @@ jq -e '
     ($initiative.properties.parameters.policyDefinitionReferences.value | map(.policyDefinitionReferenceId) | sort) and
   all($assignment.properties.parameters.nonComplianceMessages.value[];
     $tagsByReference[.policyDefinitionReferenceId] as $tag |
-    $tag != null and .message == "Resource groups must include the \($tag) tag.") and
+    $tag != null and .message == (
+      if ($nonEmptyTags | index($tag)) != null then
+        "Resource groups must include a non-empty \($tag) tag."
+      else
+        "Resource groups must set the \($tag) tag to one of: \($allowedTagValues[$tag] | join(", "))."
+      end)) and
   ($inheritanceInitiative.properties.parameters.policyDefinitionReferences.value | length) == 6 and
   ($inheritanceInitiative.properties.parameters.policyDefinitionReferences.value | map(.parameters.tagName.value) | sort) ==
     ($requiredTags | sort) and
@@ -694,13 +713,14 @@ jq -e '
   $inheritanceAssignment.properties.parameters.enforcementMode.value ==
     "[parameters(\u0027denyPolicyEnforcementMode\u0027)]" and
   $inheritanceAssignment.condition == "[parameters(\u0027enableTagInheritance\u0027)]" and
+  .variables.governanceTagAllowedValues == $allowedTagValues and
   .parameters.enableTagInheritance.defaultValue == false and
   .outputs.tagInheritanceRemediation.value.enabled == "[parameters(\u0027enableTagInheritance\u0027)]" and
   ([.. | objects | select(.type? == "Microsoft.PolicyInsights/remediations")] | length) == 0 and
   .outputs.tagInheritanceRemediation.value.remediationStarted == false and
   ($connectivityEvidence.properties.template.variables.commonTags == {
-    "CostCenter": "Demo", "ApplicationName": "Connectivity Evidence", "Owner": "Platform Team",
-    "Environment": "Sandbox", "DataClassification": "Non-sensitive", "SSP-ID": "Demo",
+    "Owner": "Platform Team", "CostCenter": "Demo", "Environment": "Sandbox",
+    "DataClassification": "PSEG Internal", "Compliance": "None", "Criticality": "Low",
     "Purpose": "Landing Zone Evidence"
   }) and
   (first($connectivityEvidence.properties.template.resources[] |
@@ -708,8 +728,8 @@ jq -e '
     "[union(variables(\u0027commonTags\u0027), createObject(\u0027ESLZLifecycleOwner\u0027, parameters(\u0027namePrefix\u0027)))]") and
   (first($workloadEvidence.properties.template.resources[] |
     select(.type == "Microsoft.Resources/resourceGroups")).tags == {
-      "CostCenter": "Demo", "ApplicationName": "Landing Zone Demo", "Owner": "Workload Team",
-      "Environment": "Sandbox", "DataClassification": "Non-sensitive", "SSP-ID": "Demo",
+      "Environment": "Sandbox", "Owner": "Workload Team", "CostCenter": "Demo",
+      "DataClassification": "PSEG Internal", "Compliance": "None", "Criticality": "Low",
       "ESLZLifecycleOwner": "[parameters(\u0027namePrefix\u0027)]"
     })
 ' "${TEMP_DIR}/main.json" >/dev/null || {

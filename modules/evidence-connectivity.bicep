@@ -7,10 +7,10 @@ var resourceGroupName = 'rg-${namePrefix}-connectivity'
 var commonTags = {
   Owner: 'Platform Team'
   CostCenter: 'Demo'
-  ApplicationName: 'Connectivity Evidence'
   Environment: 'Sandbox'
-  DataClassification: 'Non-sensitive'
-  'SSP-ID': 'Demo'
+  DataClassification: 'PSEG Internal'
+  Compliance: 'None'
+  Criticality: 'Low'
   Purpose: 'Landing Zone Evidence'
 }
 

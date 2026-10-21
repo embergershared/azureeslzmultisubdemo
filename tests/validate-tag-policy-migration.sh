@@ -37,14 +37,15 @@ landing = demo + "-landingzones"
 workload = demo + "-corp"
 legacy_definition = demo + "/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-workload-rg-tags"
 initiative = demo + "/providers/Microsoft.Authorization/policySetDefinitions/eslz-demo-required-rg-tags"
-built_in = "/providers/Microsoft.Authorization/policyDefinitions/96670d01-0a4d-4649-9c89-2d3abc0a5025"
+not_empty = demo + "/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-rg-tag-not-empty"
+allowed_value = demo + "/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-rg-tag-allowed-value"
 references = [
-    ("require-cost-center", "CostCenter"),
-    ("require-application-name", "ApplicationName"),
-    ("require-owner", "Owner"),
-    ("require-environment", "Environment"),
-    ("require-data-classification", "DataClassification"),
-    ("require-ssp-id", "SSP-ID"),
+    ("require-cost-center", "CostCenter", not_empty),
+    ("require-compliance", "Compliance", allowed_value),
+    ("require-owner", "Owner", not_empty),
+    ("require-environment", "Environment", allowed_value),
+    ("require-data-classification", "DataClassification", allowed_value),
+    ("require-criticality", "Criticality", allowed_value),
 ]
 
 def emit(value):
@@ -74,7 +75,7 @@ elif command == "policy set-definition show --name eslz-demo-required-rg-tags --
     policy_references = [
         {
             "policyDefinitionId": demo + "/providers/Microsoft.Authorization/policyDefinitions/unrelated"
-                if scenario == "replacement-definition-wrong" and reference_id == "require-owner" else built_in,
+                if scenario == "replacement-definition-wrong" and reference_id == "require-owner" else definition_id,
             "definitionVersion": (
                 None if scenario == "replacement-version-missing" and reference_id == "require-owner"
                 else "2.*.*" if scenario == "replacement-version-wrong" and reference_id == "require-owner"
@@ -82,12 +83,12 @@ elif command == "policy set-definition show --name eslz-demo-required-rg-tags --
             ),
             "policyDefinitionReferenceId": reference_id,
             "parameters": {"tagName": {"value": (
-                "Application" if scenario == "replacement-tag-renamed" and reference_id == "require-application-name"
+                "ComplianceScope" if scenario == "replacement-tag-renamed" and reference_id == "require-compliance"
                 else tag_name
             )}},
         }
-        for reference_id, tag_name in references
-        if not (scenario == "replacement-reference-missing" and reference_id == "require-ssp-id")
+        for reference_id, tag_name, definition_id in references
+        if not (scenario == "replacement-reference-missing" and reference_id == "require-criticality")
     ]
     emit({"id": initiative, "properties": {"policyDefinitions": policy_references}})
 elif command == "policy assignment show --name demo-require-rg-tags --scope " + landing:

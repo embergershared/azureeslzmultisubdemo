@@ -525,13 +525,63 @@ Being a subscription Owner does not automatically give you authority at the
 tenant root. Likewise, being a Microsoft Entra Global Administrator does not
 automatically grant Azure resource access.
 
-If bootstrap access is missing, a Global Administrator can temporarily enable
-**Microsoft Entra ID** > **Properties** > **Access management for Azure
-resources**. This grants that person User Access Administrator at Azure root
-scope. It is powerful access and should be disabled after the necessary scoped
-roles are assigned. Follow Microsoft's
+### Bootstrap access at Azure root scope
+
+Tenant-scope deployments, including tenant-scope what-if, need a role
+assignment at Azure root scope (`/`). A new tenant usually has none, so
+preflight or what-if fails with `AuthorizationFailed` at scope `/` until an
+administrator completes the steps below. Follow Microsoft's
 [elevated-access procedure](https://learn.microsoft.com/azure/role-based-access-control/elevate-access-global-admin);
-do not enable it casually.
+this is powerful access, so do not enable it casually and remove it afterwards.
+
+1. **Turn on elevated access first.** A Global Administrator opens
+   **Microsoft Entra ID** > **Properties**, sets **Access management for Azure
+   resources** to **Yes**, and selects **Save**
+   ([Step 1: Elevate access for a Global Administrator](https://learn.microsoft.com/azure/role-based-access-control/elevate-access-global-admin?tabs=azure-portal#step-1-elevate-access-for-a-global-administrator)).
+   This grants that account User Access Administrator at `/`. Without this step
+   the role assignment below fails, even for a Global Administrator.
+2. **Sign in again** so the Azure CLI token carries the new access:
+
+   ```powershell
+   az login --tenant <tenant-id>
+   ```
+
+3. **Assign a deployment role at `/`** to the account that runs the
+   deployment. Owner is the simplest bootstrap role because the template also
+   creates role assignments for policy remediation identities; an
+   administrator may substitute a narrower custom role that covers every action
+   listed above.
+
+   Windows PowerShell (primary):
+
+   ```powershell
+   $operatorId = az ad signed-in-user show --query id -o tsv
+   az role assignment create --assignee-object-id $operatorId --assignee-principal-type User --role Owner --scope /
+   az role assignment list --scope / --assignee $operatorId --query "[].roleDefinitionName" -o tsv
+   ```
+
+   macOS or Linux:
+
+   ```bash
+   operator_id="$(az ad signed-in-user show --query id -o tsv)"
+   az role assignment create --assignee-object-id "${operator_id}" --assignee-principal-type User --role Owner --scope /
+   az role assignment list --scope / --assignee "${operator_id}" --query "[].roleDefinitionName" -o tsv
+   ```
+
+   In Git Bash on Windows, prefix each `az` command that passes `/` with
+   `MSYS_NO_PATHCONV=1`; otherwise Git Bash rewrites `/` into a Windows path
+   and the command targets the wrong scope. Role assignments can take a few
+   minutes to apply; run `az login` again if what-if still reports
+   `AuthorizationFailed`.
+
+4. **Remove the bootstrap access after the deployment is verified.** Delete the
+   Owner assignment at `/`, then set **Access management for Azure resources**
+   back to **No**, which removes the User Access Administrator assignment from
+   step 1:
+
+   ```powershell
+   az role assignment delete --assignee $operatorId --role Owner --scope /
+   ```
 
 ## Step 8: Create your local parameter file
 
@@ -828,11 +878,22 @@ Taggable Platform resources are audited for `Owner` and `CostCenter`.
 
 Scope: Landing Zones branch.
 
-Resource groups must have the exact `CostCenter`, `ApplicationName`, `Owner`,
-`Environment`, `DataClassification`, and `SSP-ID` tags. The tagging initiative
-is defined at the dedicated demo root and assigned at Landing Zones. It provides
-a tag-specific noncompliance message for each requirement, and its assignment
-starts in `DoNotEnforce`.
+Resource groups must carry these six tags:
+
+| Tag | Rule |
+|---|---|
+| `Environment` | One of `Prod`, `Non-Prod`, `Dev`, `Test`, `QA`, `Sandbox`, `Other` |
+| `Owner` | Must exist and cannot be empty |
+| `CostCenter` | Must exist and cannot be empty |
+| `DataClassification` | One of `PSEG Internal`, `PSEG Confidential`, `PSEG Restricted` |
+| `Compliance` | One of `NERC-CIP`, `SOX`, `PCI-DSS`, `HIPAA`, `NIST-CSF`, `Internal`, `None` (a single value) |
+| `Criticality` | One of `Low`, `Medium`, `High`, `Critical` |
+
+The allowed values live in `governanceTagAllowedValues` in `main.bicep`. Azure
+Policy compares them case-insensitively, so `prod` satisfies `Prod`. The tagging
+initiative is defined at the dedicated demo root and assigned at Landing Zones.
+It provides a tag-specific noncompliance message for each requirement, and its
+assignment starts in `DoNotEnforce`.
 
 Azure Policy is inherited from parent scopes and evaluates resources beneath
 management groups. See
@@ -1281,8 +1342,14 @@ The operator lacks an action at the reported scope. Read the full error:
 - `Microsoft.Authorization/roleAssignments/write` relates to RBAC;
 - `Microsoft.Resources/deployments/*` relates to nested Bicep deployments.
 
-Do not solve every authorization error by assigning Owner at tenant root. Ask
-an administrator for the narrowest suitable role and scope.
+If the error names scope `/` on the very first preflight or what-if, the
+root-scope bootstrap in
+[Step 7](#bootstrap-access-at-azure-root-scope) has not been completed: turn on
+**Access management for Azure resources** first, sign in again, and then
+assign the deployment role at `/`.
+
+Otherwise, do not solve every authorization error by assigning Owner at tenant
+root. Ask an administrator for the narrowest suitable role and scope.
 
 ### Subscription movement is blocked
 

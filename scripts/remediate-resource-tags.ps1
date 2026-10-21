@@ -20,11 +20,11 @@ $BuiltInId = '/providers/Microsoft.Authorization/policyDefinitions/ea3f2387-9b95
 $ExecutionConfirmation = 'REMEDIATE-MISSING-RESOURCE-TAGS'
 $ExpectedReferences = [ordered]@{
     'inherit-cost-center' = 'CostCenter'
-    'inherit-application-name' = 'ApplicationName'
+    'inherit-compliance' = 'Compliance'
     'inherit-owner' = 'Owner'
     'inherit-environment' = 'Environment'
     'inherit-data-classification' = 'DataClassification'
-    'inherit-ssp-id' = 'SSP-ID'
+    'inherit-criticality' = 'Criticality'
 }
 
 function Stop-Remediation {

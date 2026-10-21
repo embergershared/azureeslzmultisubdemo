@@ -64,11 +64,11 @@ validate_live_controls() {
     --arg built_in "${BUILT_IN_ID}" '
       [
         { id: "inherit-cost-center", tag: "CostCenter" },
-        { id: "inherit-application-name", tag: "ApplicationName" },
+        { id: "inherit-compliance", tag: "Compliance" },
         { id: "inherit-owner", tag: "Owner" },
         { id: "inherit-environment", tag: "Environment" },
         { id: "inherit-data-classification", tag: "DataClassification" },
-        { id: "inherit-ssp-id", tag: "SSP-ID" }
+        { id: "inherit-criticality", tag: "Criticality" }
       ] as $expected |
       (.id | ascii_downcase) == ($id | ascii_downcase) and
       (.policyDefinitions // .properties.policyDefinitions // []) as $references |
@@ -101,7 +101,7 @@ expected_confirmation="${active_tenant}/${landing_zones_name}/${ASSIGNMENT_NAME}
 printf 'TAG-INHERITANCE REMEDIATION PLAN\n'
 printf '  Assignment: %s\n' "${assignment_id}"
 printf '  Scope: %s\n' "${landing_zones_scope}"
-printf '  References: inherit-cost-center, inherit-application-name, inherit-owner, inherit-environment, inherit-data-classification, inherit-ssp-id\n'
+printf '  References: inherit-cost-center, inherit-compliance, inherit-owner, inherit-environment, inherit-data-classification, inherit-criticality\n'
 
 if [[ "${MODE}" != '--execute' ]]; then
   printf 'Preview only; no remediation task was created. Re-run with --execute after approval.\n'
@@ -121,11 +121,11 @@ validate_live_controls
 
 for reference in \
   inherit-cost-center \
-  inherit-application-name \
+  inherit-compliance \
   inherit-owner \
   inherit-environment \
   inherit-data-classification \
-  inherit-ssp-id
+  inherit-criticality
 do
   az policy remediation create \
     --management-group "${landing_zones_name}" \

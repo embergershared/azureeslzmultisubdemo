@@ -129,23 +129,27 @@ replacement_initiative="$(read_required 'the replacement tagging initiative' pol
   --name "${replacement_initiative_name}" --management-group "${prefix}")"
 [[ "$(printf '%s' "${replacement_initiative}" | jq -er '.id | ascii_downcase')" == "$(lower "${replacement_initiative_id}")" ]] \
   || fail 'The replacement tagging initiative has an unexpected resource ID.'
-require_resource_group_tag_definition_id='/providers/Microsoft.Authorization/policyDefinitions/96670d01-0a4d-4649-9c89-2d3abc0a5025'
-printf '%s' "${replacement_initiative}" | jq -e --arg definition_id "$(lower "${require_resource_group_tag_definition_id}")" '
+require_non_empty_tag_definition_id="${demo_root_scope}/providers/Microsoft.Authorization/policyDefinitions/${prefix}-require-rg-tag-not-empty"
+require_allowed_value_tag_definition_id="${demo_root_scope}/providers/Microsoft.Authorization/policyDefinitions/${prefix}-require-rg-tag-allowed-value"
+printf '%s' "${replacement_initiative}" | jq -e \
+  --arg not_empty "$(lower "${require_non_empty_tag_definition_id}")" \
+  --arg allowed_value "$(lower "${require_allowed_value_tag_definition_id}")" '
   [
-    { id: "require-cost-center", tag: "CostCenter" },
-    { id: "require-application-name", tag: "ApplicationName" },
-    { id: "require-owner", tag: "Owner" },
-    { id: "require-environment", tag: "Environment" },
-    { id: "require-data-classification", tag: "DataClassification" },
-    { id: "require-ssp-id", tag: "SSP-ID" }
+    { id: "require-cost-center", tag: "CostCenter", definition: $not_empty },
+    { id: "require-compliance", tag: "Compliance", definition: $allowed_value },
+    { id: "require-owner", tag: "Owner", definition: $not_empty },
+    { id: "require-environment", tag: "Environment", definition: $allowed_value },
+    { id: "require-data-classification", tag: "DataClassification", definition: $allowed_value },
+    { id: "require-criticality", tag: "Criticality", definition: $allowed_value }
   ] as $expected |
   (.policyDefinitions // .properties.policyDefinitions // []) as $references |
   ($references | length) == 6 and
-  ([$references[] | { id: .policyDefinitionReferenceId, tag: .parameters.tagName.value }] | sort_by(.id)) ==
-    ($expected | sort_by(.id)) and
-  all($references[];
-    (.policyDefinitionId | ascii_downcase) == $definition_id and
-    .definitionVersion == "1.*.*")
+  ([$references[] | {
+    id: .policyDefinitionReferenceId,
+    tag: .parameters.tagName.value,
+    definition: (.policyDefinitionId | ascii_downcase)
+  }] | sort_by(.id)) == ($expected | sort_by(.id)) and
+  all($references[]; .definitionVersion == "1.*.*")
 ' >/dev/null || fail 'The replacement tagging initiative does not contain the exact six pinned governance tag references.'
 replacement_assignment="$(read_required 'the replacement Landing Zones assignment' policy assignment show \
   --name "${legacy_assignment_name}" --scope "${landing_zones_scope}")"

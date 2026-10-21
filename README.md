@@ -101,7 +101,7 @@ root:
 | Demo root | Block common costly service types and VM SKUs outside an intentionally small allowlist | Deny assignment in `DoNotEnforce` |
 | Demo root | Customer deployment-restrictions initiative: `eastus`/`eastus2`, approved resource types and VM SKUs, managed disks, and public IP creation | Deny members in `DoNotEnforce`; audit members remain Audit |
 | Platform | Audit `Owner` and `CostCenter` tags on taggable resources | Audit |
-| Landing Zones | Require `CostCenter`, `ApplicationName`, `Owner`, `Environment`, `DataClassification`, and `SSP-ID` tags on resource groups | Initiative assignment in `DoNotEnforce` |
+| Landing Zones | Require non-empty `Owner` and `CostCenter` tags, and `Environment`, `DataClassification`, `Compliance`, and `Criticality` tags with approved values, on resource groups | Initiative assignment in `DoNotEnforce` |
 | Landing Zones | Inherit those six tags to taggable child resources only when missing | Modify initiative assignment in `DoNotEnforce` |
 | Corp/Online | Audit public inbound SSH/RDP NSG rules and subnets without NSGs | Audit assignment in `DoNotEnforce` |
 | Corp/Online and opt-in Critical Infrastructure | Audit selected PaaS public network access and private endpoint readiness | Audit |
@@ -921,6 +921,13 @@ tenant, subscription, and group IDs out of committed files and out of
 exemption records.
 
 ## Validate and preview
+
+Tenant-scope preflight and what-if need a role assignment at Azure root scope
+`/`. On a new tenant, a Global Administrator must first set **Microsoft Entra
+ID** > **Properties** > **Access management for Azure resources** to **Yes**
+before that role can be assigned; follow
+[Bootstrap access at Azure root scope](docs/BEGINNERS-GUIDE.md#bootstrap-access-at-azure-root-scope)
+and remove the access after deployment.
 
 These commands are read-only with respect to Azure resources.
 

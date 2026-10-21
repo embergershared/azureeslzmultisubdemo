@@ -848,6 +848,116 @@ resource platformTags 'Microsoft.Authorization/policyDefinitions@2025-03-01' = {
   }
 }
 
+resource requireResourceGroupTagNotEmpty 'Microsoft.Authorization/policyDefinitions@2025-03-01' = {
+  name: '${namePrefix}-require-rg-tag-not-empty'
+  properties: {
+    displayName: 'Demo - require a non-empty tag on resource groups'
+    description: 'Denies resource groups where the named tag is missing, empty, or whitespace only.'
+    mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
+    metadata: {
+      category: 'Tags'
+      version: '1.0.0'
+    }
+    parameters: {
+      tagName: {
+        type: 'String'
+        metadata: {
+          displayName: 'Tag name'
+          description: 'Name of the tag that must carry a non-empty value.'
+        }
+      }
+    }
+    policyRule: {
+      if: {
+        allOf: [
+          {
+            field: 'type'
+            equals: 'Microsoft.Resources/subscriptions/resourceGroups'
+          }
+          {
+            anyOf: [
+              {
+                field: '[concat(\'tags[\', parameters(\'tagName\'), \']\')]'
+                exists: 'false'
+              }
+              {
+                value: '[trim(coalesce(field(concat(\'tags[\', parameters(\'tagName\'), \']\')), \'\'))]'
+                equals: ''
+              }
+            ]
+          }
+        ]
+      }
+      then: {
+        effect: 'deny'
+      }
+    }
+  }
+}
+
+// Azure Policy in/notIn comparisons are case-insensitive, so 'prod' satisfies 'Prod'.
+resource requireResourceGroupTagAllowedValue 'Microsoft.Authorization/policyDefinitions@2025-03-01' = {
+  name: '${namePrefix}-require-rg-tag-allowed-value'
+  properties: {
+    displayName: 'Demo - require a tag from an allowed value list on resource groups'
+    description: 'Denies resource groups where the named tag is missing or its value is not in the allowed list.'
+    mode: 'All'
+    version: '1.0.0'
+    versions: [
+      '1.0.0'
+    ]
+    metadata: {
+      category: 'Tags'
+      version: '1.0.0'
+    }
+    parameters: {
+      tagName: {
+        type: 'String'
+        metadata: {
+          displayName: 'Tag name'
+          description: 'Name of the tag whose value must come from the allowed list.'
+        }
+      }
+      allowedValues: {
+        type: 'Array'
+        metadata: {
+          displayName: 'Allowed values'
+          description: 'Single tag values accepted for the named tag.'
+        }
+      }
+    }
+    policyRule: {
+      if: {
+        allOf: [
+          {
+            field: 'type'
+            equals: 'Microsoft.Resources/subscriptions/resourceGroups'
+          }
+          {
+            anyOf: [
+              {
+                field: '[concat(\'tags[\', parameters(\'tagName\'), \']\')]'
+                exists: 'false'
+              }
+              {
+                field: '[concat(\'tags[\', parameters(\'tagName\'), \']\')]'
+                notIn: '[parameters(\'allowedValues\')]'
+              }
+            ]
+          }
+        ]
+      }
+      then: {
+        effect: 'deny'
+      }
+    }
+  }
+}
+
 output allowedLocationsPolicyDefinitionId string = allowedLocations.id
 output allowedResourceTypesAllPolicyDefinitionId string = allowedResourceTypesAll.id
 output auditPublicIpPolicyDefinitionId string = auditPublicIp.id
@@ -858,3 +968,5 @@ output approvedFirewallRoutesPolicyDefinitionId string = approvedFirewallRoutes.
 output expensiveResourcesPolicyDefinitionId string = expensiveResources.id
 output storageCmkApprovedKeyPolicyDefinitionId string = storageCmkApprovedKey.id
 output platformTagsPolicyDefinitionId string = platformTags.id
+output requireResourceGroupTagNotEmptyPolicyDefinitionId string = requireResourceGroupTagNotEmpty.id
+output requireResourceGroupTagAllowedValuePolicyDefinitionId string = requireResourceGroupTagAllowedValue.id
