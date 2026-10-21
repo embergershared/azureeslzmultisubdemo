@@ -8,12 +8,12 @@ resource workloadResourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' =
   name: 'rg-${namePrefix}-${workloadArchetype}-demo'
   location: location
   tags: {
-    ApplicationName: 'Landing Zone Demo'
     Environment: 'Sandbox'
     Owner: 'Workload Team'
     CostCenter: 'Demo'
-    DataClassification: 'Non-sensitive'
-    'SSP-ID': 'Demo'
+    DataClassification: 'PSEG Internal'
+    Compliance: 'None'
+    Criticality: 'Low'
     ESLZLifecycleOwner: namePrefix
   }
 }

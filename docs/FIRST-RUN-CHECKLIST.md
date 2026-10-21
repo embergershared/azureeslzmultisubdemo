@@ -141,6 +141,16 @@ cp parameters/demo.parameters.template.json parameters/demo.parameters.json
 
 ## 5. Validate without deploying
 
+Before the first preflight, bootstrap access at Azure root scope `/`
+([BEGINNERS-GUIDE.md, Step 7](BEGINNERS-GUIDE.md#bootstrap-access-at-azure-root-scope)):
+
+- [ ] A Global Administrator set **Microsoft Entra ID** > **Properties** >
+      **Access management for Azure resources** to **Yes** and saved
+      ([Microsoft Learn, Step 1](https://learn.microsoft.com/azure/role-based-access-control/elevate-access-global-admin?tabs=azure-portal#step-1-elevate-access-for-a-global-administrator)).
+- [ ] I signed in again with `az login --tenant <tenant-id>`.
+- [ ] My account holds the approved deployment role (for example Owner) at
+      scope `/`.
+
 Windows PowerShell (primary):
 
 ```powershell
@@ -199,6 +209,8 @@ and both subscription IDs.
 - [ ] Each subscription is under the intended leaf.
 - [ ] Policy assignments exist only at the demo root or below, never at the
       tenant root.
+- [ ] The bootstrap deployment role at `/` was removed and **Access management
+      for Azure resources** was set back to **No**.
 - [ ] Each branch shows the assignments expected for its scope
       ([CONTROL-SCOPE-AND-INHERITANCE.md](CONTROL-SCOPE-AND-INHERITANCE.md)),
       checked with

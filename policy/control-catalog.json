@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "catalogVersion": "1.4.0",
-  "generatedOn": "2026-09-02",
+  "catalogVersion": "1.5.0",
+  "generatedOn": "2026-10-21",
   "purpose": "Authoritative v2 mapping from each customer requirement to its implementation mechanism (Azure Policy built-in/custom definition or initiative, Entra/PIM artifact, Defender CSPM/CIEM feature, shared-service architecture pattern, or manual evidence process) before v2 policy code is expanded. Sourced from public Microsoft Learn and the Azure/azure-policy GitHub repository; no tenant credentials were used.",
   "sourceIssue": "https://github.com/johnstel/azureeslzmultisubdemo/issues/3",
   "classificationValues": [
@@ -401,23 +401,23 @@
     {
       "id": "REQ-TAG-01",
       "domain": "tagging",
-      "customerRequirement": "Require the 'CostCenter' tag on every resource group.",
+      "customerRequirement": "Require the 'CostCenter' tag with a non-empty value on every resource group.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
         "kind": "policyDefinition",
-        "builtIn": true,
-        "displayName": "Require a tag on resource groups",
-        "definitionId": "96670d01-0a4d-4649-9c89-2d3abc0a5025",
+        "builtIn": false,
+        "displayName": "Demo - require a non-empty tag on resource groups",
+        "definitionId": "${namePrefix}-require-rg-tag-not-empty",
         "majorVersion": "1",
         "verifiedVersion": "1.0.0",
-        "verifiedOn": "2026-08-31",
-        "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-policy/master/built-in-policies/policyDefinitions/Tags/ResourceGroupRequireTag_Deny.json",
-        "verificationMethod": "raw-json",
+        "sourceUrl": null,
+        "verifiedOn": "2026-10-21",
+        "verificationMethod": "in-repository-custom-definition",
         "category": "Tags"
       },
       "supportedEffects": [
-        "Deny"
+        "deny"
       ],
       "requiredParameters": [
         "tagName=CostCenter"
@@ -426,60 +426,61 @@
       "remediationIdentityRequired": false,
       "dependencies": [],
       "enforcementPhase": "deny-do-not-enforce",
-      "evidenceSource": "Compiled ARM template + policy assignment parameter value.",
-      "notes": "Replaces the existing 'Application' tag requirement with 'ApplicationName' per issue #12; each of the six tags is one instance of the same built-in definition with a different tagName parameter."
+      "evidenceSource": "Compiled ARM template + policy assignment parameter value (modules/policy-library.bicep custom definitions).",
+      "notes": "Customer governance tag set v3: Environment, Owner, CostCenter, DataClassification, Compliance, and Criticality replace the earlier ApplicationName and SSP-ID requirements. Owner and CostCenter use the non-empty custom definition; the other four use the allowed-value custom definition with a single-value allow list (Azure Policy notIn comparisons are case-insensitive)."
     },
     {
       "id": "REQ-TAG-02",
       "domain": "tagging",
-      "customerRequirement": "Require the 'ApplicationName' tag on every resource group.",
+      "customerRequirement": "Require the 'Compliance' tag on every resource group with one of the approved values: 'NERC-CIP', 'SOX', 'PCI-DSS', 'HIPAA', 'NIST-CSF', 'Internal', 'None'.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
         "kind": "policyDefinition",
-        "builtIn": true,
-        "displayName": "Require a tag on resource groups",
-        "definitionId": "96670d01-0a4d-4649-9c89-2d3abc0a5025",
+        "builtIn": false,
+        "displayName": "Demo - require a tag from an allowed value list on resource groups",
+        "definitionId": "${namePrefix}-require-rg-tag-allowed-value",
         "majorVersion": "1",
         "verifiedVersion": "1.0.0",
-        "verifiedOn": "2026-08-31",
-        "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-policy/master/built-in-policies/policyDefinitions/Tags/ResourceGroupRequireTag_Deny.json",
-        "verificationMethod": "raw-json",
+        "sourceUrl": null,
+        "verifiedOn": "2026-10-21",
+        "verificationMethod": "in-repository-custom-definition",
         "category": "Tags"
       },
       "supportedEffects": [
-        "Deny"
+        "deny"
       ],
       "requiredParameters": [
-        "tagName=ApplicationName"
+        "tagName=Compliance",
+        "allowedValues=NERC-CIP|SOX|PCI-DSS|HIPAA|NIST-CSF|Internal|None"
       ],
       "roleDefinitionIds": [],
       "remediationIdentityRequired": false,
       "dependencies": [],
       "enforcementPhase": "deny-do-not-enforce",
-      "evidenceSource": "Compiled ARM template + policy assignment parameter value.",
-      "notes": "Replaces the existing 'Application' tag requirement with 'ApplicationName' per issue #12; each of the six tags is one instance of the same built-in definition with a different tagName parameter."
+      "evidenceSource": "Compiled ARM template + policy assignment parameter value (modules/policy-library.bicep custom definitions).",
+      "notes": "Customer governance tag set v3: Environment, Owner, CostCenter, DataClassification, Compliance, and Criticality replace the earlier ApplicationName and SSP-ID requirements. Owner and CostCenter use the non-empty custom definition; the other four use the allowed-value custom definition with a single-value allow list (Azure Policy notIn comparisons are case-insensitive)."
     },
     {
       "id": "REQ-TAG-03",
       "domain": "tagging",
-      "customerRequirement": "Require the 'Owner' tag on every resource group.",
+      "customerRequirement": "Require the 'Owner' tag with a non-empty value on every resource group.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
         "kind": "policyDefinition",
-        "builtIn": true,
-        "displayName": "Require a tag on resource groups",
-        "definitionId": "96670d01-0a4d-4649-9c89-2d3abc0a5025",
+        "builtIn": false,
+        "displayName": "Demo - require a non-empty tag on resource groups",
+        "definitionId": "${namePrefix}-require-rg-tag-not-empty",
         "majorVersion": "1",
         "verifiedVersion": "1.0.0",
-        "verifiedOn": "2026-08-31",
-        "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-policy/master/built-in-policies/policyDefinitions/Tags/ResourceGroupRequireTag_Deny.json",
-        "verificationMethod": "raw-json",
+        "sourceUrl": null,
+        "verifiedOn": "2026-10-21",
+        "verificationMethod": "in-repository-custom-definition",
         "category": "Tags"
       },
       "supportedEffects": [
-        "Deny"
+        "deny"
       ],
       "requiredParameters": [
         "tagName=Owner"
@@ -488,101 +489,104 @@
       "remediationIdentityRequired": false,
       "dependencies": [],
       "enforcementPhase": "deny-do-not-enforce",
-      "evidenceSource": "Compiled ARM template + policy assignment parameter value.",
-      "notes": "Replaces the existing 'Application' tag requirement with 'ApplicationName' per issue #12; each of the six tags is one instance of the same built-in definition with a different tagName parameter."
+      "evidenceSource": "Compiled ARM template + policy assignment parameter value (modules/policy-library.bicep custom definitions).",
+      "notes": "Customer governance tag set v3: Environment, Owner, CostCenter, DataClassification, Compliance, and Criticality replace the earlier ApplicationName and SSP-ID requirements. Owner and CostCenter use the non-empty custom definition; the other four use the allowed-value custom definition with a single-value allow list (Azure Policy notIn comparisons are case-insensitive)."
     },
     {
       "id": "REQ-TAG-04",
       "domain": "tagging",
-      "customerRequirement": "Require the 'Environment' tag on every resource group.",
+      "customerRequirement": "Require the 'Environment' tag on every resource group with one of the approved values: 'Prod', 'Non-Prod', 'Dev', 'Test', 'QA', 'Sandbox', 'Other'.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
         "kind": "policyDefinition",
-        "builtIn": true,
-        "displayName": "Require a tag on resource groups",
-        "definitionId": "96670d01-0a4d-4649-9c89-2d3abc0a5025",
+        "builtIn": false,
+        "displayName": "Demo - require a tag from an allowed value list on resource groups",
+        "definitionId": "${namePrefix}-require-rg-tag-allowed-value",
         "majorVersion": "1",
         "verifiedVersion": "1.0.0",
-        "verifiedOn": "2026-08-31",
-        "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-policy/master/built-in-policies/policyDefinitions/Tags/ResourceGroupRequireTag_Deny.json",
-        "verificationMethod": "raw-json",
+        "sourceUrl": null,
+        "verifiedOn": "2026-10-21",
+        "verificationMethod": "in-repository-custom-definition",
         "category": "Tags"
       },
       "supportedEffects": [
-        "Deny"
+        "deny"
       ],
       "requiredParameters": [
-        "tagName=Environment"
+        "tagName=Environment",
+        "allowedValues=Prod|Non-Prod|Dev|Test|QA|Sandbox|Other"
       ],
       "roleDefinitionIds": [],
       "remediationIdentityRequired": false,
       "dependencies": [],
       "enforcementPhase": "deny-do-not-enforce",
-      "evidenceSource": "Compiled ARM template + policy assignment parameter value.",
-      "notes": "Replaces the existing 'Application' tag requirement with 'ApplicationName' per issue #12; each of the six tags is one instance of the same built-in definition with a different tagName parameter."
+      "evidenceSource": "Compiled ARM template + policy assignment parameter value (modules/policy-library.bicep custom definitions).",
+      "notes": "Customer governance tag set v3: Environment, Owner, CostCenter, DataClassification, Compliance, and Criticality replace the earlier ApplicationName and SSP-ID requirements. Owner and CostCenter use the non-empty custom definition; the other four use the allowed-value custom definition with a single-value allow list (Azure Policy notIn comparisons are case-insensitive)."
     },
     {
       "id": "REQ-TAG-05",
       "domain": "tagging",
-      "customerRequirement": "Require the 'DataClassification' tag on every resource group.",
+      "customerRequirement": "Require the 'DataClassification' tag on every resource group with one of the approved values: 'PSEG Internal', 'PSEG Confidential', 'PSEG Restricted'.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
         "kind": "policyDefinition",
-        "builtIn": true,
-        "displayName": "Require a tag on resource groups",
-        "definitionId": "96670d01-0a4d-4649-9c89-2d3abc0a5025",
+        "builtIn": false,
+        "displayName": "Demo - require a tag from an allowed value list on resource groups",
+        "definitionId": "${namePrefix}-require-rg-tag-allowed-value",
         "majorVersion": "1",
         "verifiedVersion": "1.0.0",
-        "verifiedOn": "2026-08-31",
-        "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-policy/master/built-in-policies/policyDefinitions/Tags/ResourceGroupRequireTag_Deny.json",
-        "verificationMethod": "raw-json",
+        "sourceUrl": null,
+        "verifiedOn": "2026-10-21",
+        "verificationMethod": "in-repository-custom-definition",
         "category": "Tags"
       },
       "supportedEffects": [
-        "Deny"
+        "deny"
       ],
       "requiredParameters": [
-        "tagName=DataClassification"
+        "tagName=DataClassification",
+        "allowedValues=PSEG Internal|PSEG Confidential|PSEG Restricted"
       ],
       "roleDefinitionIds": [],
       "remediationIdentityRequired": false,
       "dependencies": [],
       "enforcementPhase": "deny-do-not-enforce",
-      "evidenceSource": "Compiled ARM template + policy assignment parameter value.",
-      "notes": "Replaces the existing 'Application' tag requirement with 'ApplicationName' per issue #12; each of the six tags is one instance of the same built-in definition with a different tagName parameter."
+      "evidenceSource": "Compiled ARM template + policy assignment parameter value (modules/policy-library.bicep custom definitions).",
+      "notes": "Customer governance tag set v3: Environment, Owner, CostCenter, DataClassification, Compliance, and Criticality replace the earlier ApplicationName and SSP-ID requirements. Owner and CostCenter use the non-empty custom definition; the other four use the allowed-value custom definition with a single-value allow list (Azure Policy notIn comparisons are case-insensitive)."
     },
     {
       "id": "REQ-TAG-06",
       "domain": "tagging",
-      "customerRequirement": "Require the 'SSP-ID' tag on every resource group.",
+      "customerRequirement": "Require the 'Criticality' tag on every resource group with one of the approved values: 'Low', 'Medium', 'High', 'Critical'.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
         "kind": "policyDefinition",
-        "builtIn": true,
-        "displayName": "Require a tag on resource groups",
-        "definitionId": "96670d01-0a4d-4649-9c89-2d3abc0a5025",
+        "builtIn": false,
+        "displayName": "Demo - require a tag from an allowed value list on resource groups",
+        "definitionId": "${namePrefix}-require-rg-tag-allowed-value",
         "majorVersion": "1",
         "verifiedVersion": "1.0.0",
-        "verifiedOn": "2026-08-31",
-        "sourceUrl": "https://raw.githubusercontent.com/Azure/azure-policy/master/built-in-policies/policyDefinitions/Tags/ResourceGroupRequireTag_Deny.json",
-        "verificationMethod": "raw-json",
+        "sourceUrl": null,
+        "verifiedOn": "2026-10-21",
+        "verificationMethod": "in-repository-custom-definition",
         "category": "Tags"
       },
       "supportedEffects": [
-        "Deny"
+        "deny"
       ],
       "requiredParameters": [
-        "tagName=SSP-ID"
+        "tagName=Criticality",
+        "allowedValues=Low|Medium|High|Critical"
       ],
       "roleDefinitionIds": [],
       "remediationIdentityRequired": false,
       "dependencies": [],
       "enforcementPhase": "deny-do-not-enforce",
-      "evidenceSource": "Compiled ARM template + policy assignment parameter value.",
-      "notes": "Replaces the existing 'Application' tag requirement with 'ApplicationName' per issue #12; each of the six tags is one instance of the same built-in definition with a different tagName parameter."
+      "evidenceSource": "Compiled ARM template + policy assignment parameter value (modules/policy-library.bicep custom definitions).",
+      "notes": "Customer governance tag set v3: Environment, Owner, CostCenter, DataClassification, Compliance, and Criticality replace the earlier ApplicationName and SSP-ID requirements. Owner and CostCenter use the non-empty custom definition; the other four use the allowed-value custom definition with a single-value allow list (Azure Policy notIn comparisons are case-insensitive)."
     },
     {
       "id": "REQ-TAG-07",
@@ -623,7 +627,7 @@
     {
       "id": "REQ-TAG-08",
       "domain": "tagging",
-      "customerRequirement": "Inherit the 'ApplicationName' tag from the resource group to taggable child resources when missing, without overwriting existing values.",
+      "customerRequirement": "Inherit the 'Compliance' tag from the resource group to taggable child resources when missing, without overwriting existing values.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
@@ -643,7 +647,7 @@
         "Modify"
       ],
       "requiredParameters": [
-        "tagName=ApplicationName"
+        "tagName=Compliance"
       ],
       "roleDefinitionIds": [
         "b24988ac-6180-42a0-ab88-20f7382dd24c"
@@ -767,7 +771,7 @@
     {
       "id": "REQ-TAG-12",
       "domain": "tagging",
-      "customerRequirement": "Inherit the 'SSP-ID' tag from the resource group to taggable child resources when missing, without overwriting existing values.",
+      "customerRequirement": "Inherit the 'Criticality' tag from the resource group to taggable child resources when missing, without overwriting existing values.",
       "scope": "landingzones",
       "classification": "azure-policy",
       "mechanism": {
@@ -787,7 +791,7 @@
         "Modify"
       ],
       "requiredParameters": [
-        "tagName=SSP-ID"
+        "tagName=Criticality"
       ],
       "roleDefinitionIds": [
         "b24988ac-6180-42a0-ab88-20f7382dd24c"

@@ -143,14 +143,15 @@ $replacementInitiative = Read-AzureRequired 'the replacement tagging initiative'
 if ([string]$replacementInitiative.id -ine $replacementInitiativeId) {
     Stop-Migration 'The replacement tagging initiative has an unexpected resource ID.'
 }
-$requireResourceGroupTagDefinitionId = '/providers/Microsoft.Authorization/policyDefinitions/96670d01-0a4d-4649-9c89-2d3abc0a5025'
+$requireNonEmptyTagDefinitionId = "$demoRootScope/providers/Microsoft.Authorization/policyDefinitions/$prefix-require-rg-tag-not-empty"
+$requireAllowedValueTagDefinitionId = "$demoRootScope/providers/Microsoft.Authorization/policyDefinitions/$prefix-require-rg-tag-allowed-value"
 $expectedTagReferences = [ordered]@{
-    'require-cost-center' = 'CostCenter'
-    'require-application-name' = 'ApplicationName'
-    'require-owner' = 'Owner'
-    'require-environment' = 'Environment'
-    'require-data-classification' = 'DataClassification'
-    'require-ssp-id' = 'SSP-ID'
+    'require-cost-center' = @('CostCenter', $requireNonEmptyTagDefinitionId)
+    'require-compliance' = @('Compliance', $requireAllowedValueTagDefinitionId)
+    'require-owner' = @('Owner', $requireNonEmptyTagDefinitionId)
+    'require-environment' = @('Environment', $requireAllowedValueTagDefinitionId)
+    'require-data-classification' = @('DataClassification', $requireAllowedValueTagDefinitionId)
+    'require-criticality' = @('Criticality', $requireAllowedValueTagDefinitionId)
 }
 $replacementReferences = if ($replacementInitiative.PSObject.Properties['policyDefinitions']) {
     @($replacementInitiative.policyDefinitions)
@@ -165,8 +166,8 @@ foreach ($expectedReference in $expectedTagReferences.GetEnumerator()) {
         [string]$_.policyDefinitionReferenceId -ceq $expectedReference.Key
     })
     if ($matchingReferences.Count -ne 1 -or
-        [string]$matchingReferences[0].parameters.tagName.value -cne $expectedReference.Value -or
-        [string]$matchingReferences[0].policyDefinitionId -ine $requireResourceGroupTagDefinitionId -or
+        [string]$matchingReferences[0].parameters.tagName.value -cne $expectedReference.Value[0] -or
+        [string]$matchingReferences[0].policyDefinitionId -ine $expectedReference.Value[1] -or
         [string]$matchingReferences[0].definitionVersion -cne '1.*.*') {
         Stop-Migration 'The replacement tagging initiative does not contain the exact six pinned governance tag references.'
     }

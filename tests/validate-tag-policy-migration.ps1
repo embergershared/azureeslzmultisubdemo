@@ -46,14 +46,15 @@ $landing = "$demo-landingzones"
 $workload = "$demo-corp"
 $legacyDefinition = "$demo/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-workload-rg-tags"
 $initiative = "$demo/providers/Microsoft.Authorization/policySetDefinitions/eslz-demo-required-rg-tags"
-$builtIn = '/providers/Microsoft.Authorization/policyDefinitions/96670d01-0a4d-4649-9c89-2d3abc0a5025'
+$notEmpty = "$demo/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-rg-tag-not-empty"
+$allowedValue = "$demo/providers/Microsoft.Authorization/policyDefinitions/eslz-demo-require-rg-tag-allowed-value"
 $references = [ordered]@{
-    'require-cost-center' = 'CostCenter'
-    'require-application-name' = 'ApplicationName'
-    'require-owner' = 'Owner'
-    'require-environment' = 'Environment'
-    'require-data-classification' = 'DataClassification'
-    'require-ssp-id' = 'SSP-ID'
+    'require-cost-center' = @('CostCenter', $notEmpty)
+    'require-compliance' = @('Compliance', $allowedValue)
+    'require-owner' = @('Owner', $notEmpty)
+    'require-environment' = @('Environment', $allowedValue)
+    'require-data-classification' = @('DataClassification', $allowedValue)
+    'require-criticality' = @('Criticality', $allowedValue)
 }
 
 if ($command -eq 'account show') {
@@ -86,12 +87,12 @@ elseif ($command -eq 'policy set-definition show --name eslz-demo-required-rg-ta
     }
     $policyReferences = @(foreach ($reference in $references.GetEnumerator()) {
         $referenceId = $reference.Key
-        if ($scenario -eq 'replacement-reference-missing' -and $referenceId -eq 'require-ssp-id') { continue }
+        if ($scenario -eq 'replacement-reference-missing' -and $referenceId -eq 'require-criticality') { continue }
         @{
-            policyDefinitionId = if ($scenario -eq 'replacement-definition-wrong' -and $referenceId -eq 'require-owner') { "$demo/providers/Microsoft.Authorization/policyDefinitions/unrelated" } else { $builtIn }
+            policyDefinitionId = if ($scenario -eq 'replacement-definition-wrong' -and $referenceId -eq 'require-owner') { "$demo/providers/Microsoft.Authorization/policyDefinitions/unrelated" } else { $reference.Value[1] }
             definitionVersion = if ($scenario -eq 'replacement-version-missing' -and $referenceId -eq 'require-owner') { $null } elseif ($scenario -eq 'replacement-version-wrong' -and $referenceId -eq 'require-owner') { '2.*.*' } else { '1.*.*' }
             policyDefinitionReferenceId = $referenceId
-            parameters = @{ tagName = @{ value = if ($scenario -eq 'replacement-tag-renamed' -and $referenceId -eq 'require-application-name') { 'Application' } else { $reference.Value } } }
+            parameters = @{ tagName = @{ value = if ($scenario -eq 'replacement-tag-renamed' -and $referenceId -eq 'require-compliance') { 'ComplianceScope' } else { $reference.Value[0] } } }
         }
     })
     $result = @{ id = $initiative; properties = @{ policyDefinitions = $policyReferences } }

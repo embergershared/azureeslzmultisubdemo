@@ -655,10 +655,39 @@ var dataProtectionAuditOnlyEffect = dataProtectionPolicyEffect == 'Disabled' ? '
 // selection is mapped back to Audit instead of being propagated.
 var dataProtectionPurgeProtectionEffect = dataProtectionPolicyEffect == 'Deny' ? 'Deny' : 'Audit'
 var dataProtectionAuditIfNotExistsEffect = dataProtectionPolicyEffect == 'Disabled' ? 'Disabled' : 'AuditIfNotExists'
-var requireResourceGroupTagPolicyDefinitionId = tenantResourceId(
-  'Microsoft.Authorization/policyDefinitions',
-  '96670d01-0a4d-4649-9c89-2d3abc0a5025'
-)
+// Single-value allow lists for the governance tags enforced on landing-zone resource groups.
+// Owner and CostCenter accept any non-empty value and are therefore not listed here.
+var governanceTagAllowedValues = {
+  Environment: [
+    'Prod'
+    'Non-Prod'
+    'Dev'
+    'Test'
+    'QA'
+    'Sandbox'
+    'Other'
+  ]
+  DataClassification: [
+    'PSEG Internal'
+    'PSEG Confidential'
+    'PSEG Restricted'
+  ]
+  Compliance: [
+    'NERC-CIP'
+    'SOX'
+    'PCI-DSS'
+    'HIPAA'
+    'NIST-CSF'
+    'Internal'
+    'None'
+  ]
+  Criticality: [
+    'Low'
+    'Medium'
+    'High'
+    'Critical'
+  ]
+}
 var inheritResourceGroupTagPolicyDefinitionId = tenantResourceId(
   'Microsoft.Authorization/policyDefinitions',
   'ea3f2387-9b95-492a-a190-fcdc54f7b070'
@@ -785,12 +814,12 @@ module resourceGroupTagsInitiative 'modules/policy-initiative.bicep' = {
   params: {
     initiativeName: '${namePrefix}-required-rg-tags'
     initiativeDisplayName: 'Demo - required resource group tags'
-    initiativeDescription: 'Requires the six customer governance tags on resource groups.'
+    initiativeDescription: 'Requires the six customer governance tags on resource groups: Owner and CostCenter must be non-empty; Environment, DataClassification, Compliance, and Criticality must use an approved value.'
     initiativeCategory: 'Tags'
-    initiativeVersion: '2.0.0'
+    initiativeVersion: '3.0.0'
     policyDefinitionReferences: [
       {
-        policyDefinitionId: requireResourceGroupTagPolicyDefinitionId
+        policyDefinitionId: policyLibrary.outputs.requireResourceGroupTagNotEmptyPolicyDefinitionId
         definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'require-cost-center'
         parameters: {
@@ -801,18 +830,21 @@ module resourceGroupTagsInitiative 'modules/policy-initiative.bicep' = {
         groupNames: []
       }
       {
-        policyDefinitionId: requireResourceGroupTagPolicyDefinitionId
+        policyDefinitionId: policyLibrary.outputs.requireResourceGroupTagAllowedValuePolicyDefinitionId
         definitionVersion: '1.*.*'
-        policyDefinitionReferenceId: 'require-application-name'
+        policyDefinitionReferenceId: 'require-compliance'
         parameters: {
           tagName: {
-            value: 'ApplicationName'
+            value: 'Compliance'
+          }
+          allowedValues: {
+            value: governanceTagAllowedValues.Compliance
           }
         }
         groupNames: []
       }
       {
-        policyDefinitionId: requireResourceGroupTagPolicyDefinitionId
+        policyDefinitionId: policyLibrary.outputs.requireResourceGroupTagNotEmptyPolicyDefinitionId
         definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'require-owner'
         parameters: {
@@ -823,34 +855,43 @@ module resourceGroupTagsInitiative 'modules/policy-initiative.bicep' = {
         groupNames: []
       }
       {
-        policyDefinitionId: requireResourceGroupTagPolicyDefinitionId
+        policyDefinitionId: policyLibrary.outputs.requireResourceGroupTagAllowedValuePolicyDefinitionId
         definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'require-environment'
         parameters: {
           tagName: {
             value: 'Environment'
           }
+          allowedValues: {
+            value: governanceTagAllowedValues.Environment
+          }
         }
         groupNames: []
       }
       {
-        policyDefinitionId: requireResourceGroupTagPolicyDefinitionId
+        policyDefinitionId: policyLibrary.outputs.requireResourceGroupTagAllowedValuePolicyDefinitionId
         definitionVersion: '1.*.*'
         policyDefinitionReferenceId: 'require-data-classification'
         parameters: {
           tagName: {
             value: 'DataClassification'
           }
+          allowedValues: {
+            value: governanceTagAllowedValues.DataClassification
+          }
         }
         groupNames: []
       }
       {
-        policyDefinitionId: requireResourceGroupTagPolicyDefinitionId
+        policyDefinitionId: policyLibrary.outputs.requireResourceGroupTagAllowedValuePolicyDefinitionId
         definitionVersion: '1.*.*'
-        policyDefinitionReferenceId: 'require-ssp-id'
+        policyDefinitionReferenceId: 'require-criticality'
         parameters: {
           tagName: {
-            value: 'SSP-ID'
+            value: 'Criticality'
+          }
+          allowedValues: {
+            value: governanceTagAllowedValues.Criticality
           }
         }
         groupNames: []
@@ -870,7 +911,7 @@ module tagInheritanceInitiative 'modules/policy-initiative.bicep' = {
     initiativeDisplayName: 'Demo - inherit resource group tags'
     initiativeDescription: 'Inherits the six customer governance tags from resource groups to taggable child resources when missing.'
     initiativeCategory: 'Tags'
-    initiativeVersion: '2.0.0'
+    initiativeVersion: '3.0.0'
     policyDefinitionReferences: [
       {
         policyDefinitionId: inheritResourceGroupTagPolicyDefinitionId
@@ -886,10 +927,10 @@ module tagInheritanceInitiative 'modules/policy-initiative.bicep' = {
       {
         policyDefinitionId: inheritResourceGroupTagPolicyDefinitionId
         definitionVersion: '1.*.*'
-        policyDefinitionReferenceId: 'inherit-application-name'
+        policyDefinitionReferenceId: 'inherit-compliance'
         parameters: {
           tagName: {
-            value: 'ApplicationName'
+            value: 'Compliance'
           }
         }
         groupNames: []
@@ -930,10 +971,10 @@ module tagInheritanceInitiative 'modules/policy-initiative.bicep' = {
       {
         policyDefinitionId: inheritResourceGroupTagPolicyDefinitionId
         definitionVersion: '1.*.*'
-        policyDefinitionReferenceId: 'inherit-ssp-id'
+        policyDefinitionReferenceId: 'inherit-criticality'
         parameters: {
           tagName: {
-            value: 'SSP-ID'
+            value: 'Criticality'
           }
         }
         groupNames: []
@@ -1721,35 +1762,35 @@ module resourceGroupTagsAssignment 'modules/policy-assignment.bicep' = {
   params: {
     assignmentName: 'demo-require-rg-tags'
     displayName: 'Demo - require resource group tags'
-    description: 'Requires CostCenter, ApplicationName, Owner, Environment, DataClassification, and SSP-ID tags on landing-zone resource groups.'
+    description: 'Requires Environment, Owner, CostCenter, DataClassification, Compliance, and Criticality tags with approved values on landing-zone resource groups.'
     policyDefinitionId: resourceGroupTagsInitiative.outputs.policySetDefinitionId
-    definitionVersion: '2.*.*'
+    definitionVersion: '3.*.*'
     enforcementMode: denyPolicyEnforcementMode
     parameters: {}
     nonComplianceMessages: [
       {
-        message: 'Resource groups must include the CostCenter tag.'
+        message: 'Resource groups must include a non-empty CostCenter tag.'
         policyDefinitionReferenceId: 'require-cost-center'
       }
       {
-        message: 'Resource groups must include the ApplicationName tag.'
-        policyDefinitionReferenceId: 'require-application-name'
+        message: 'Resource groups must set the Compliance tag to one of: NERC-CIP, SOX, PCI-DSS, HIPAA, NIST-CSF, Internal, None.'
+        policyDefinitionReferenceId: 'require-compliance'
       }
       {
-        message: 'Resource groups must include the Owner tag.'
+        message: 'Resource groups must include a non-empty Owner tag.'
         policyDefinitionReferenceId: 'require-owner'
       }
       {
-        message: 'Resource groups must include the Environment tag.'
+        message: 'Resource groups must set the Environment tag to one of: Prod, Non-Prod, Dev, Test, QA, Sandbox, Other.'
         policyDefinitionReferenceId: 'require-environment'
       }
       {
-        message: 'Resource groups must include the DataClassification tag.'
+        message: 'Resource groups must set the DataClassification tag to one of: PSEG Internal, PSEG Confidential, PSEG Restricted.'
         policyDefinitionReferenceId: 'require-data-classification'
       }
       {
-        message: 'Resource groups must include the SSP-ID tag.'
-        policyDefinitionReferenceId: 'require-ssp-id'
+        message: 'Resource groups must set the Criticality tag to one of: Low, Medium, High, Critical.'
+        policyDefinitionReferenceId: 'require-criticality'
       }
     ]
   }
@@ -1900,7 +1941,7 @@ module tagInheritanceAssignment 'modules/remediating-policy-assignment.bicep' = 
     displayName: 'Demo - inherit resource group tags'
     description: 'Inherits missing customer governance tags from resource groups without replacing existing resource tag values. Existing resources require a deliberate remediation task.'
     policyDefinitionId: tagInheritanceInitiative.outputs.policySetDefinitionId
-    definitionVersion: '2.*.*'
+    definitionVersion: '3.*.*'
     location: deploymentLocation
     identity: {
       type: 'SystemAssigned'
@@ -3298,12 +3339,12 @@ module customerOwnedBackupVault 'modules/backup-vault.bicep' = if (customerOwned
     namePrefix: namePrefix
     location: recoveryServicesVaultLocation
     tags: {
-      ApplicationName: 'Landing Zone Demo'
       Environment: 'Sandbox'
       Owner: 'Workload Team'
       CostCenter: 'Demo'
-      DataClassification: 'Non-sensitive'
-      'SSP-ID': 'Demo'
+      DataClassification: 'PSEG Internal'
+      Compliance: 'None'
+      Criticality: 'Low'
       BackupRetentionStandard: empty(trim(backupRetentionStandardId)) ? 'Undocumented' : trim(backupRetentionStandardId)
     }
     immutabilityState: vaultImmutabilityState

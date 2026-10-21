@@ -64,13 +64,16 @@ to work — see
 
 | | v1 | v2 |
 |---|---|---|
-| Required tags | `Application`, `Environment`, `Owner` | `CostCenter`, `ApplicationName`, `Owner`, `Environment`, `DataClassification`, `SSP-ID` |
-| Mechanism | One custom definition, `<namePrefix>-require-workload-rg-tags` | Initiative composing six instances of the built-in require-tag-on-resource-group definition |
+| Required tags | `Application`, `Environment`, `Owner` | `Environment`, `Owner`, `CostCenter`, `DataClassification`, `Compliance`, `Criticality` |
+| Mechanism | One custom definition, `<namePrefix>-require-workload-rg-tags` | Initiative (v3) composing six references to two custom definitions: `<namePrefix>-require-rg-tag-not-empty` and `<namePrefix>-require-rg-tag-allowed-value` |
 | Assignment scope | Workload branch (`<namePrefix>-<archetype>`) | Landing Zones |
 | Assignment name | `demo-require-rg-tags` | `demo-require-rg-tags` at the new scope |
 | Inheritance to child resources | None | Optional `Modify` initiative, off by default |
 
-Note that `Application` became `ApplicationName`, and three tags were added.
+Note that `Application` is no longer required, and four tags were added.
+Initiative v3 also replaced the interim v2 tags `ApplicationName` and `SSP-ID`
+with `Compliance` and `Criticality`, and four tags now accept only approved
+values.
 Existing resource groups tagged for v1 will report non-compliant against the
 new requirements until they are tagged or exempted. Evaluate that in
 `DoNotEnforce` before doing anything else.

@@ -129,7 +129,7 @@ a workload-oriented control.
 
 | Assignment | Purpose | Default posture |
 |---|---|---|
-| `Demo - require resource group tags` | Six required resource-group tags | Initiative in `DoNotEnforce` |
+| `Demo - require resource group tags` | Six required resource-group tags, four with approved-value lists | Initiative in `DoNotEnforce` |
 | `Demo - inherit resource group tags` | `Modify` inheritance of the same six tags when missing | Opt-in, `DoNotEnforce`, no remediation task |
 | `Demo - storage and Key Vault data-protection guardrails` | Storage/Key Vault posture and CMK readiness | Audit in `DoNotEnforce` |
 | `Demo - backup coverage and vault posture` | Backup coverage and vault posture audits | Audit/`AuditIfNotExists` |
