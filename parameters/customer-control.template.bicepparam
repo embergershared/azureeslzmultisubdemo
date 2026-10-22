@@ -49,6 +49,35 @@ param customerAllowedResourceTypes = [
   'Microsoft.SecurityInsights/onboardingStates'
   'Microsoft.Consumption/budgets'
   'Microsoft.Insights/actionGroups'
+  // Policy evaluates resource groups as this type (not Microsoft.Resources/resourceGroups)
+  'Microsoft.Resources/subscriptions/resourceGroups'
+  // ALZ platform (azlz-deployment) - Management: logging and Azure Monitor Agent
+  'Microsoft.Authorization/locks'
+  'Microsoft.Automation/automationAccounts'
+  'Microsoft.Insights/dataCollectionRules'
+  // ALZ platform - Connectivity: hub networking
+  'Microsoft.Network/azureFirewalls'
+  'Microsoft.Network/bastionHosts'
+  'Microsoft.Network/ddosProtectionPlans'
+  'Microsoft.Network/dnsResolvers'
+  'Microsoft.Network/dnsResolvers/inboundEndpoints'
+  'Microsoft.Network/dnsResolvers/outboundEndpoints'
+  'Microsoft.Network/firewallPolicies'
+  'Microsoft.Network/firewallPolicies/ruleCollectionGroups'
+  'Microsoft.Network/routeTables'
+  'Microsoft.Network/virtualNetworkGateways'
+  'Microsoft.Network/virtualNetworks/virtualNetworkPeerings'
+  // ALZ platform - Connectivity: Virtual WAN
+  'Microsoft.Network/expressRouteGateways'
+  'Microsoft.Network/p2sVpnGateways'
+  'Microsoft.Network/virtualHubs'
+  'Microsoft.Network/virtualHubs/hubRouteTables'
+  'Microsoft.Network/virtualHubs/hubVirtualNetworkConnections'
+  'Microsoft.Network/virtualHubs/routingIntent'
+  'Microsoft.Network/virtualWans'
+  'Microsoft.Network/vpnGateways'
+  'Microsoft.Network/vpnGateways/vpnConnections'
+  'Microsoft.Network/vpnServerConfigurations'
 ]
 param customerAllowedVmSkus = [
   'Standard_B1ls'
