@@ -224,6 +224,8 @@ param customerAllowedResourceTypes array = [
   'Microsoft.Resources/deployments'
   'Microsoft.Resources/resourceGroups'
   'Microsoft.SecurityInsights/onboardingStates'
+  'Microsoft.Consumption/budgets'
+  'Microsoft.Insights/actionGroups'
 ]
 
 @description('Change-controlled customer-control virtual machine size SKU allowlist.')

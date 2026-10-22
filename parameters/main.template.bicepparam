@@ -47,6 +47,8 @@ param customerAllowedResourceTypes = [
   'Microsoft.Resources/deployments'
   'Microsoft.Resources/resourceGroups'
   'Microsoft.SecurityInsights/onboardingStates'
+  'Microsoft.Consumption/budgets'
+  'Microsoft.Insights/actionGroups'
 ]
 param customerAllowedVmSkus = [
   'Standard_B1ls'
