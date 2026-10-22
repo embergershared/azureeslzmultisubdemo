@@ -75,7 +75,9 @@
         "Microsoft.RecoveryServices/vaults/backupPolicies",
         "Microsoft.Resources/deployments",
         "Microsoft.Resources/resourceGroups",
-        "Microsoft.SecurityInsights/onboardingStates"
+        "Microsoft.SecurityInsights/onboardingStates",
+        "Microsoft.Consumption/budgets",
+        "Microsoft.Insights/actionGroups"
       ]
     },
     "customerAllowedVmSkus": {
