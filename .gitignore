@@ -15,3 +15,6 @@ work/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 parameters/mcaps39155.parameters.json
+docs/SUBSCRIPTION-REQUEST-HUB-SPOKE.md
+parameters/mcaps567410.parameters.json
+parameters/mcaps567410.donotenforce.parameters.json
